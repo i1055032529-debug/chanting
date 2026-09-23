@@ -69,7 +69,7 @@ func seat_customer() -> bool:
 	order_id += 1
 	_new_task("cook")
 	_set_phase(Phase.WAITING)
-	feedback.emit("新订单：香煎蛋饭。到左上方烹饪台按 E 开始。")
+	feedback.emit("新订单：香煎蛋饭。到烹饪台按 E 开始。")
 	return true
 
 
@@ -78,7 +78,7 @@ func customer_departed() -> bool:
 		return false
 	_new_task("clear")
 	_set_phase(Phase.DIRTY)
-	feedback.emit("餐桌待收盘。拿起餐盘，送到左下方回收台。")
+	feedback.emit("餐桌待收盘。拿起餐盘，送到回收台。")
 	return true
 
 
@@ -123,7 +123,7 @@ func interact(target: String) -> bool:
 				_start_task("clear")
 				carrying = Carry.PLATE
 				_set_phase(Phase.CLEARING)
-				feedback.emit("已拿起餐盘。送到左下方回收台后，餐桌重新可用。")
+				feedback.emit("已拿起餐盘。送到回收台后，餐桌重新可用。")
 				return true
 			return _reject("%s" % table_hint())
 		"sink":

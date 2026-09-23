@@ -30,14 +30,14 @@ func _run() -> void:
 	for i in range(3):
 		game.customer._process(10.0)
 	check(game.model.phase == Model.Phase.WAITING, "customer walking emits seating and order")
-	game.player.position = game.TARGETS.stove
+	game.player.position = game.target_position("stove")
 	check(game.closest_target() == "stove", "operation position selects stove")
 	check(game.try_interact("stove"), "scene starts cooking")
 	game._process(Model.COOK_SECONDS)
 	check(game.model.phase == Model.Phase.READY, "scene updates cooking")
-	game.player.position = game.TARGETS.pass
+	game.player.position = game.target_position("pass")
 	check(game.try_interact("pass"), "scene picks up food")
-	game.player.position = game.TARGETS.table
+	game.player.position = game.target_position("table")
 	check(game.try_interact("table"), "scene serves food")
 	game._process(Model.EAT_SECONDS)
 	check(game.model.coins == 18 and game.customer.leaving, "payment and departure connected")
@@ -45,23 +45,30 @@ func _run() -> void:
 		game.customer._process(10.0)
 	check(game.model.phase == Model.Phase.DIRTY, "departure enables clearing")
 	check(game.try_interact("table"), "scene picks up dirty plate")
-	game.player.position = game.TARGETS.sink
+	game.player.position = game.target_position("sink")
 	check(game.try_interact("sink"), "scene recycles plate")
 	check(game.model.completed_cycles == 1, "scene completes entire service")
 	await process_frame
+	# Moving furniture in the editor also moves its collision and interaction point.
+	var station: Node2D = game.stations["stove"]
+	var original: Vector2 = station.position
+	var old_target: Vector2 = game.target_position("stove")
+	station.position += Vector2(25, 0)
+	check(game.target_position("stove").is_equal_approx(old_target + Vector2(25, 0)), "furniture movement updates interaction point")
+	station.position = original
 	# Collision tests use actual CharacterBody2D movement and fixed physics ticks.
-	game.player.position = Vector2(70, 430)
+	game.player.position = Vector2(75, 520)
 	Input.action_press("move_left")
 	for i in range(30):
 		await physics_frame
 	Input.action_release("move_left")
-	check(game.player.position.x >= 57.0, "wall blocks player")
-	game.player.position = Vector2(148, 310)
+	check(game.player.position.x >= 59.0, "wall blocks player")
+	game.player.position = game.target_position("stove")
 	Input.action_press("move_up")
 	for i in range(25):
 		await physics_frame
 	Input.action_release("move_up")
-	check(game.player.position.y >= 291.0, "stove blocks player")
+	check(game.player.position.y >= 395.0, "stove blocks player")
 	# Pause through input event handling, then resume through the always-active node.
 	var pause_event := InputEventKey.new()
 	pause_event.keycode = KEY_ESCAPE

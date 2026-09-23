@@ -1,0 +1,70 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/station.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/furniture/sink.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/items/meal.png" id="3"]
+
+[sub_resource type="RectangleShape2D" id="Footprint"]
+size = Vector2(104, 36)
+
+[sub_resource type="SystemFont" id="Font"]
+font_names = PackedStringArray("PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC")
+
+[sub_resource type="StyleBoxFlat" id="CaptionBackground"]
+bg_color = Color(0.19, 0.12, 0.07, 0.83)
+content_margin_left = 7.0
+content_margin_right = 7.0
+content_margin_top = 3.0
+content_margin_bottom = 3.0
+
+[node name="Sink" type="StaticBody2D"]
+texture_filter = 1
+collision_layer = 1
+collision_mask = 0
+script = ExtResource("1")
+station_id = "sink"
+display_name = "餐盘回收"
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(0, -48)
+texture = ExtResource("2")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, -18)
+shape = SubResource("Footprint")
+
+[node name="InteractionPoint" type="Marker2D" parent="."]
+position = Vector2(0, 30)
+
+[node name="Hint" type="Label" parent="InteractionPoint"]
+visible = false
+z_index = 10
+offset_left = -11.0
+offset_top = 14.0
+offset_right = 11.0
+offset_bottom = 40.0
+theme_override_colors/font_color = Color(1, 0.89, 0.65, 1)
+theme_override_styles/normal = SubResource("CaptionBackground")
+text = "E"
+horizontal_alignment = 1
+
+[node name="Caption" type="Label" parent="."]
+z_index = 10
+offset_left = -64.0
+offset_top = -125.0
+offset_right = 64.0
+offset_bottom = -100.0
+theme_override_fonts/font = SubResource("Font")
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("CaptionBackground")
+text = "餐盘回收"
+horizontal_alignment = 1
+mouse_filter = 2
+
+[node name="ItemMount" type="Marker2D" parent="."]
+position = Vector2(0, -70)
+
+[node name="Item" type="Sprite2D" parent="ItemMount"]
+visible = false
+texture = ExtResource("3")
+hframes = 2

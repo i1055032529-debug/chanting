@@ -1,0 +1,120 @@
+[gd_resource type="SpriteFrames" load_steps=18 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/characters/chef.png" id="1"]
+
+[sub_resource type="AtlasTexture" id="F0_0"]
+
+atlas = ExtResource("1")
+
+region = Rect2(0, 0, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F0_1"]
+
+atlas = ExtResource("1")
+
+region = Rect2(64, 0, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F0_2"]
+
+atlas = ExtResource("1")
+
+region = Rect2(128, 0, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F0_3"]
+
+atlas = ExtResource("1")
+
+region = Rect2(192, 0, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F1_0"]
+
+atlas = ExtResource("1")
+
+region = Rect2(0, 88, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F1_1"]
+
+atlas = ExtResource("1")
+
+region = Rect2(64, 88, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F1_2"]
+
+atlas = ExtResource("1")
+
+region = Rect2(128, 88, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F1_3"]
+
+atlas = ExtResource("1")
+
+region = Rect2(192, 88, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F2_0"]
+
+atlas = ExtResource("1")
+
+region = Rect2(0, 176, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F2_1"]
+
+atlas = ExtResource("1")
+
+region = Rect2(64, 176, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F2_2"]
+
+atlas = ExtResource("1")
+
+region = Rect2(128, 176, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F2_3"]
+
+atlas = ExtResource("1")
+
+region = Rect2(192, 176, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F3_0"]
+
+atlas = ExtResource("1")
+
+region = Rect2(0, 264, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F3_1"]
+
+atlas = ExtResource("1")
+
+region = Rect2(64, 264, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F3_2"]
+
+atlas = ExtResource("1")
+
+region = Rect2(128, 264, 64, 88)
+
+[sub_resource type="AtlasTexture" id="F3_3"]
+
+atlas = ExtResource("1")
+
+region = Rect2(192, 264, 64, 88)
+
+[resource]
+
+animations = [
+{"frames": [{"duration": 1.0, "texture": SubResource("F0_0")}], "loop": true, "name": &"idle_down", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F0_1")}, {"duration": 1.0, "texture": SubResource("F0_0")}, {"duration": 1.0, "texture": SubResource("F0_3")}, {"duration": 1.0, "texture": SubResource("F0_0")}], "loop": true, "name": &"walk_down", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F0_1")}, {"duration": 1.0, "texture": SubResource("F0_0")}, {"duration": 1.0, "texture": SubResource("F0_3")}, {"duration": 1.0, "texture": SubResource("F0_0")}], "loop": true, "name": &"carry_down", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F0_0")}], "loop": true, "name": &"work_down", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F1_0")}], "loop": true, "name": &"idle_up", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F1_1")}, {"duration": 1.0, "texture": SubResource("F1_0")}, {"duration": 1.0, "texture": SubResource("F1_3")}, {"duration": 1.0, "texture": SubResource("F1_0")}], "loop": true, "name": &"walk_up", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F1_1")}, {"duration": 1.0, "texture": SubResource("F1_0")}, {"duration": 1.0, "texture": SubResource("F1_3")}, {"duration": 1.0, "texture": SubResource("F1_0")}], "loop": true, "name": &"carry_up", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F1_0")}], "loop": true, "name": &"work_up", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F2_0")}], "loop": true, "name": &"idle_left", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F2_1")}, {"duration": 1.0, "texture": SubResource("F2_0")}, {"duration": 1.0, "texture": SubResource("F2_3")}, {"duration": 1.0, "texture": SubResource("F2_0")}], "loop": true, "name": &"walk_left", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F2_1")}, {"duration": 1.0, "texture": SubResource("F2_0")}, {"duration": 1.0, "texture": SubResource("F2_3")}, {"duration": 1.0, "texture": SubResource("F2_0")}], "loop": true, "name": &"carry_left", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F2_0")}], "loop": true, "name": &"work_left", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F3_0")}], "loop": true, "name": &"idle_right", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F3_1")}, {"duration": 1.0, "texture": SubResource("F3_0")}, {"duration": 1.0, "texture": SubResource("F3_3")}, {"duration": 1.0, "texture": SubResource("F3_0")}], "loop": true, "name": &"walk_right", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F3_1")}, {"duration": 1.0, "texture": SubResource("F3_0")}, {"duration": 1.0, "texture": SubResource("F3_3")}, {"duration": 1.0, "texture": SubResource("F3_0")}], "loop": true, "name": &"carry_right", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F3_0")}], "loop": true, "name": &"work_right", "speed": 7.0}
+]

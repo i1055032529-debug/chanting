@@ -1,20 +1,17 @@
 extends Node2D
 
 const Model = preload("res://scripts/service_model.gd")
-const Art = preload("res://scripts/pixel_art.gd")
-const Player = preload("res://scripts/player.gd")
-const Customer = preload("res://scripts/customer.gd")
-const TARGETS := {"stove": Vector2(148, 307), "pass": Vector2(332, 307), "table": Vector2(574, 418), "sink": Vector2(148, 557)}
-const TARGET_NAMES := {"stove": "烹饪台", "pass": "出餐台", "table": "01 号桌", "sink": "回收台"}
+const Customer = preload("res://scenes/actors/customer.tscn")
 const INTERACT_DISTANCE := 55.0
-const CREAM := Color("eee7cf")
-const MUTED := Color("91a59b")
-const GOLD := Color("edc576")
+const CREAM := Color("f4e5cd")
+const MUTED := Color("bea993")
+const GOLD := Color("edbc72")
 
 var model := Model.new()
 var player: CharacterBody2D
 var customer: Node2D
 var actors: Node2D
+var stations: Dictionary = {}
 var font: SystemFont
 var ui: Control
 var labels: Dictionary = {}
@@ -52,12 +49,15 @@ func _process(delta: float) -> void:
 	player.locked = model.phase == Model.Phase.COOKING
 	player.carried = model.carrying
 	nearest = closest_target()
-	prompt.text = "[ E ]  %s · %s" % [TARGET_NAMES[nearest], _action_hint(nearest)] if not nearest.is_empty() else "靠近工作台下方的标记，按 E 交互"
+	prompt.text = "[ E ]  %s · %s" % [stations[nearest].display_name, _action_hint(nearest)] if not nearest.is_empty() else "靠近工作台或餐桌的正下方，按 E 交互"
 	labels.toast.text = toast if toast_time > 0.0 else _next_step()
 	bar.visible = model.phase in [Model.Phase.COOKING, Model.Phase.EATING]
 	bar.value = model.progress() * 100.0
 	debug_label.text = "DEBUG / F1 关闭\nN 生成顾客 · R 重置\n订单 #%d · %s\n位置 (%d, %d)\n任务 %s" % [model.order_id, model.phase_label(), player.position.x, player.position.y, str(model.tasks)]
-	queue_redraw()
+	for station_id: String in stations:
+		stations[station_id].set_highlight(station_id == nearest)
+	stations["pass"].show_item(model.phase == Model.Phase.READY)
+	stations["table"].show_item(model.phase in [Model.Phase.EATING, Model.Phase.LEAVING, Model.Phase.DIRTY], model.phase != Model.Phase.EATING)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -76,8 +76,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func closest_target() -> String:
 	var result := ""
 	var best := INTERACT_DISTANCE
-	for key: String in TARGETS:
-		var distance: float = player.position.distance_to(TARGETS[key])
+	for key: String in stations:
+		var distance: float = player.global_position.distance_to(target_position(key))
 		if distance < best:
 			result = key
 			best = distance
@@ -85,13 +85,16 @@ func closest_target() -> String:
 
 
 func try_interact(target: String) -> bool:
-	if target.is_empty() or not TARGETS.has(target):
-		_show_feedback("靠近工作台下方的标记，再按 E 交互。")
+	if target.is_empty() or not stations.has(target):
+		_show_feedback("靠近工作台或餐桌的正下方，再按 E 交互。")
 		return false
-	if player.position.distance_to(TARGETS[target]) >= INTERACT_DISTANCE:
+	if player.global_position.distance_to(target_position(target)) >= INTERACT_DISTANCE:
 		_show_feedback("距离太远了，请靠近目标。")
 		return false
-	return model.interact(target)
+	var succeeded: bool = model.interact(target)
+	if succeeded:
+		player.direction = (stations[target].global_position - player.global_position).normalized()
+	return succeeded
 
 
 func reset_run() -> void:
@@ -99,7 +102,7 @@ func reset_run() -> void:
 		customer.free()
 	customer = null
 	model.reset()
-	player.position = Vector2(374, 465)
+	player.global_position = $PlayerStart.global_position
 	player.velocity = Vector2.ZERO
 	player.locked = false
 	player.carried = 0
@@ -119,42 +122,24 @@ func _setup_input() -> void:
 				InputMap.action_add_event(action, event)
 
 
+func target_position(station_id: String) -> Vector2:
+	return stations[station_id].interaction_position()
+
+
 func _build_room() -> void:
-	_solid(Rect2(32, 148, 752, 48))
-	_solid(Rect2(32, 196, 16, 456))
-	_solid(Rect2(768, 196, 16, 456))
-	_solid(Rect2(32, 638, 752, 14))
-	_solid(Rect2(96, 224, 104, 56))
-	_solid(Rect2(280, 224, 104, 56))
-	_solid(Rect2(526, 330, 96, 58))
-	_solid(Rect2(634, 350, 34, 32))
-	_solid(Rect2(96, 474, 104, 56))
-	_solid(Rect2(66, 579, 38, 40))
-	_solid(Rect2(704, 215, 38, 38))
-	actors = Node2D.new()
-	actors.y_sort_enabled = true
-	add_child(actors)
-	player = Player.new()
-	player.name = "Player"
-	player.position = Vector2(374, 465)
-	actors.add_child(player)
-
-
-func _solid(rect: Rect2) -> void:
-	var body := StaticBody2D.new()
-	body.position = rect.get_center()
-	body.collision_layer = 1
-	body.collision_mask = 0
-	var collider := CollisionShape2D.new()
-	var shape := RectangleShape2D.new()
-	shape.size = rect.size
-	collider.shape = shape
-	body.add_child(collider)
-	add_child(body)
+	actors = $World
+	player = $World/Player
+	for child in actors.get_children():
+		if child.has_method("interaction_position"):
+			stations[child.station_id] = child
 
 
 func _spawn_customer() -> void:
-	customer = Customer.new()
+	customer = Customer.instantiate()
+	var waypoints: Array[Vector2] = []
+	for point in $CustomerRoute.get_children():
+		waypoints.append(point.global_position)
+	customer.configure($Entrance.global_position, waypoints, $World/Table/Seat.global_position)
 	customer.seated.connect(model.seat_customer)
 	customer.departed.connect(model.customer_departed)
 	actors.add_child(customer)
@@ -182,46 +167,36 @@ func _build_ui() -> void:
 	pause_input.set_script(preload("res://scripts/pause_input.gd"))
 	pause_input.toggle_requested.connect(_toggle_pause)
 	layer.add_child(pause_input)
-	_label("kicker", "CHANTING  /  小店营业中", Vector2(36, 22), Vector2(450, 20), 13, MUTED)
-	_label("title", "一人食堂", Vector2(32, 49), Vector2(390, 48), 34, CREAM)
-	_label("subtitle", "从一份热饭，开始你的小店生活。", Vector2(35, 104), Vector2(550, 26), 16, MUTED)
-	_panel(Rect2(520, 44, 120, 61), Color("203b36"))
-	_label("coins", "0 金币", Vector2(536, 55), Vector2(112, 40), 22, GOLD)
-	_panel(Rect2(652, 44, 132, 61), Color("203b36"))
-	_label("served", "已接待 0 位", Vector2(666, 59), Vector2(120, 32), 17, CREAM)
-	_panel(Rect2(808, 44, 280, 220), Color("223832"))
-	_label("order_kicker", "01 号桌 / 当前订单", Vector2(830, 64), Vector2(240, 25), 14, MUTED)
-	_label("dish", "等待第一位顾客", Vector2(830, 102), Vector2(240, 33), 23, CREAM)
-	_label("order", "店里很安静，好好准备一下。", Vector2(830, 149), Vector2(232, 49), 15, MUTED, true)
-	_label("status", "● 等待入店", Vector2(830, 216), Vector2(230, 26), 17, GOLD)
-	_panel(Rect2(808, 280, 280, 235), Color("1b2e2a"))
-	_label("steps_title", "一桌热饭的旅程", Vector2(830, 298), Vector2(240, 28), 19, CREAM)
-	for i in range(4):
-		_label("step%d" % i, "", Vector2(830, 342 + i * 39), Vector2(238, 30), 16, MUTED)
-	_panel(Rect2(808, 531, 280, 121), Color("223832"))
-	_label("hands_title", "手持物品", Vector2(830, 548), Vector2(220, 25), 14, MUTED)
-	_label("hands", "双手空闲", Vector2(830, 583), Vector2(220, 34), 22, CREAM)
-	_panel(Rect2(32, 660, 1056, 42), Color("203b36"))
-	_label("toast", toast, Vector2(46, 669), Vector2(1020, 27), 15, CREAM)
-	_panel(Rect2(219, 592, 397, 33), Color("172b28e8"))
-	prompt = _label("prompt", "", Vector2(225, 597), Vector2(385, 27), 14, GOLD)
-	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_label("controls", "WASD / 方向键 移动     E / 空格 交互     Esc 暂停     F1 调试", Vector2(260, 155), Vector2(518, 29), 12, CREAM)
-	_label("stove", "烹饪台", Vector2(96, 201), Vector2(104, 22), 13, Color("42675b")).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_label("pass", "出餐台", Vector2(280, 201), Vector2(104, 22), 13, Color("42675b")).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_label("sink", "餐盘回收", Vector2(94, 446), Vector2(115, 26), 13, Color("42675b")).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_label("table", "01", Vector2(552, 304), Vector2(50, 25), 17, Color("42675b")).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_label("kicker", "CHANTING  /  小店营业中", Vector2(32, 18), Vector2(300, 21), 12, MUTED)
+	_label("title", "一人食堂", Vector2(30, 42), Vector2(310, 50), 34, CREAM)
+	_label("subtitle", "从一份热饭，开始小店生活。", Vector2(32, 100), Vector2(330, 24), 14, MUTED)
+	_panel(Rect2(354, 27, 130, 66), Color("493321"))
+	_label("coins", "0 金币", Vector2(370, 42), Vector2(112, 36), 22, GOLD)
+	_panel(Rect2(494, 27, 148, 66), Color("493321"))
+	_label("served", "已接待 0 位", Vector2(510, 46), Vector2(129, 32), 18, CREAM)
+	_label("hands", "双手空闲", Vector2(357, 102), Vector2(310, 26), 15, CREAM)
+	_panel(Rect2(670, 20, 578, 108), Color("38291f"))
+	_label("dish", "等待顾客入座", Vector2(688, 34), Vector2(275, 33), 22, CREAM)
+	_label("order", "", Vector2(688, 78), Vector2(310, 34), 14, MUTED)
+	_label("status", "● 等待入店", Vector2(1016, 38), Vector2(225, 30), 17, GOLD)
 	bar = ProgressBar.new()
-	bar.position = Vector2(830, 197)
+	bar.position = Vector2(1017, 83)
 	bar.show_percentage = false
-	bar.add_theme_stylebox_override("background", _style(Color("152721")))
+	bar.add_theme_stylebox_override("background", _style(Color("211811")))
 	bar.add_theme_stylebox_override("fill", _style(GOLD))
 	ui.add_child(bar)
-	bar.size = Vector2(232, 7)
-	debug_label = _label("debug", "", Vector2(234, 204), Vector2(492, 106), 12, CREAM, true)
-	debug_label.add_theme_stylebox_override("normal", _style(Color("14251af0")))
+	bar.size = Vector2(204, 7)
+	var step_x := [36, 347, 659, 971]
+	for i in range(4):
+		_label("step%d" % i, "", Vector2(step_x[i], 136), Vector2(280, 27), 15, MUTED)
+	_panel(Rect2(32, 708, 1216, 41), Color("493321"))
+	_label("toast", toast, Vector2(47, 717), Vector2(1180, 28), 15, CREAM)
+	prompt = _label("prompt", "", Vector2(32, 761), Vector2(675, 28), 15, GOLD)
+	_label("controls", "WASD 移动   E 交互   Esc 暂停   F1 调试", Vector2(768, 764), Vector2(480, 25), 14, MUTED)
+	debug_label = _label("debug", "", Vector2(48, 450), Vector2(500, 160), 12, CREAM, true)
+	debug_label.add_theme_stylebox_override("normal", _style(Color("24190ff0")))
 	debug_label.visible = false
-	pause_panel = _panel(Rect2(350, 237, 420, 246), Color("162d29"))
+	pause_panel = _panel(Rect2(430, 277, 420, 246), Color("38291f"))
 	pause_panel.visible = false
 	pause_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	var pause_title := Label.new()
@@ -268,8 +243,8 @@ func _button(parent: Control, text: String, at: Vector2, size_value: Vector2, ca
 	button.text = text
 	button.position = at
 	button.size = size_value
-	button.add_theme_stylebox_override("normal", _style(Color("345d50")))
-	button.add_theme_stylebox_override("hover", _style(Color("4a7865")))
+	button.add_theme_stylebox_override("normal", _style(Color("755132")))
+	button.add_theme_stylebox_override("hover", _style(Color("946b44")))
 	button.pressed.connect(callback)
 	parent.add_child(button)
 
@@ -316,7 +291,7 @@ func _refresh_ui() -> void:
 	labels.coins.text = "%d 金币" % model.coins
 	labels.served.text = "已接待 %d 位" % model.served
 	labels.dish.text = "香煎蛋饭" if model.phase not in [Model.Phase.EMPTY, Model.Phase.ARRIVING] else "等待顾客入座"
-	labels.order.text = "订单 #%03d  ·  18 金币\n现做一份，好好招待。" % model.order_id if model.phase not in [Model.Phase.EMPTY, Model.Phase.ARRIVING] else "每一桌好生意，\n从干净的餐桌开始。"
+	labels.order.text = "订单 #%03d  ·  售价 18 金币" % model.order_id if model.phase not in [Model.Phase.EMPTY, Model.Phase.ARRIVING] else "每一桌好生意，从干净餐桌开始。"
 	labels.status.text = "● " + model.phase_label()
 	labels.hands.text = ["双手空闲", "一份香煎蛋饭", "用过的餐盘"][model.carrying]
 	var step := 0
@@ -339,7 +314,7 @@ func _next_step() -> String:
 		Model.Phase.EATING: return "顾客正在用餐，稍后会自动付款。"
 		Model.Phase.LEAVING: return "顾客正在离店；离开后收拾餐桌。"
 		Model.Phase.DIRTY: return "下一步：到餐桌下方按 E，拿起用过的餐盘。"
-	return "下一步：将餐盘送到左下方的回收台，恢复餐桌。"
+	return "下一步：将餐盘送到回收台，恢复餐桌。"
 
 
 func _action_hint(target: String) -> String:
@@ -349,80 +324,3 @@ func _action_hint(target: String) -> String:
 		"table": return "上菜" if model.carrying == Model.Carry.FOOD else ("收盘" if model.phase == Model.Phase.DIRTY else "查看")
 		"sink": return "回收餐盘"
 	return "交互"
-
-
-func _draw() -> void:
-	# Room shell and checkerboard floor.
-	draw_rect(Rect2(32, 148, 752, 504), Color("314d40"))
-	for y in range(196, 638, 28):
-		for x in range(48, 768, 28):
-			var color := Color("d0c3a0") if ((x - 48) / 28 + (y - 196) / 28) % 2 == 0 else Color("c5b793")
-			draw_rect(Rect2(x, y, mini(28, 768 - x), mini(28, 638 - y)), color)
-	draw_rect(Rect2(48, 180, 720, 16), Color("8b9b71"))
-	draw_rect(Rect2(48, 196, 720, 8), Color("a69976"))
-	draw_rect(Rect2(334, 623, 80, 15), Color("647e69"))
-	for x in range(340, 412, 10):
-		draw_rect(Rect2(x, 625, 3, 11), Color("819680"))
-	# Wall window and a small counter shelf.
-	draw_rect(Rect2(480, 211, 158, 69), Color("687f6a"))
-	draw_rect(Rect2(486, 216, 146, 55), Color("b7d6c3"))
-	draw_rect(Rect2(494, 221, 62, 46), Color("cfe3c8"))
-	draw_rect(Rect2(554, 216, 6, 55), Color("f0dfb6"))
-	draw_rect(Rect2(480, 274, 158, 8), Color("886d4d"))
-	_counter(Vector2(96, 224), Color("626f67"))
-	draw_rect(Rect2(105, 229, 86, 32), Color("424c47"))
-	for x in [112, 157]:
-		draw_rect(Rect2(x, 234, 25, 21), Color("242f2e"))
-		draw_rect(Rect2(x + 5, 239, 15, 11), Color("96694c"))
-	if model.phase == Model.Phase.COOKING:
-		draw_rect(Rect2(115, 237, 19, 17), GOLD)
-		for i in range(3):
-			var offset := fmod(elapsed * 18.0 + i * 13.0, 34.0)
-			draw_rect(Rect2(117 + i * 7, 229 - offset, 4, 7), Color("f4e9cbb0"))
-	_counter(Vector2(280, 224), Color("b6c1a7"))
-	draw_rect(Rect2(291, 232, 81, 28), Color("e7d9b4"))
-	if model.phase == Model.Phase.READY:
-		Art.plate(self, Vector2(332, 245), true)
-	_counter(Vector2(96, 474), Color("91b1a4"))
-	draw_rect(Rect2(110, 480, 76, 31), Color("536f67"))
-	draw_rect(Rect2(117, 485, 62, 20), Color("84a49b"))
-	draw_rect(Rect2(157, 464, 6, 23), Color("d9e0cb"))
-	draw_rect(Rect2(144, 464, 19, 6), Color("d9e0cb"))
-	# Table and chair.
-	draw_rect(Rect2(530, 343, 96, 54), Color("6f725755"))
-	draw_rect(Rect2(534, 376, 10, 24), Color("785540"))
-	draw_rect(Rect2(603, 376, 10, 24), Color("785540"))
-	draw_rect(Rect2(526, 330, 96, 55), Color("946d49"))
-	draw_rect(Rect2(526, 330, 96, 45), Color("ce9f65"))
-	draw_rect(Rect2(532, 336, 84, 32), Color("dcb67c"))
-	draw_rect(Rect2(636, 350, 31, 32), Color("a4774d"))
-	draw_rect(Rect2(640, 347, 26, 25), Color("c69a65"))
-	draw_rect(Rect2(661, 338, 8, 44), Color("916341"))
-	if model.phase in [Model.Phase.EATING, Model.Phase.LEAVING, Model.Phase.DIRTY]:
-		Art.plate(self, Vector2(574, 350), model.phase == Model.Phase.EATING)
-	_plant(Vector2(84, 604))
-	_plant(Vector2(722, 242))
-	for key: String in TARGETS:
-		var point: Vector2 = TARGETS[key]
-		var active := key == nearest
-		var color := Color("fff0b2") if active else Color("8e987466")
-		draw_rect(Rect2(point + Vector2(-17, -5), Vector2(34, 10)), color, false, 2.0)
-		if active:
-			draw_rect(Rect2(point + Vector2(-4, 9), Vector2(8, 3)), GOLD)
-
-
-func _counter(at: Vector2, top: Color) -> void:
-	draw_rect(Rect2(at + Vector2(3, 10), Vector2(105, 54)), Color("67684644"))
-	draw_rect(Rect2(at, Vector2(104, 56)), Color("77654e"))
-	draw_rect(Rect2(at, Vector2(104, 42)), top)
-	draw_rect(Rect2(at + Vector2(8, 45), Vector2(39, 8)), Color("a59169"))
-	draw_rect(Rect2(at + Vector2(56, 45), Vector2(39, 8)), Color("a59169"))
-
-
-func _plant(at: Vector2) -> void:
-	draw_rect(Rect2(at + Vector2(-12, -3), Vector2(24, 19)), Color("a77352"))
-	draw_rect(Rect2(at + Vector2(-16, -9), Vector2(32, 9)), Color("cf9b67"))
-	draw_rect(Rect2(at + Vector2(-3, -32), Vector2(6, 27)), Color("4b7554"))
-	draw_rect(Rect2(at + Vector2(-19, -31), Vector2(18, 14)), Color("6b915d"))
-	draw_rect(Rect2(at + Vector2(0, -40), Vector2(17, 20)), Color("5c8655"))
-	draw_rect(Rect2(at + Vector2(-12, -47), Vector2(14, 17)), Color("86a76e"))

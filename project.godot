@@ -17,10 +17,10 @@ config/icon="res://icon.svg"
 
 [display]
 
-window/size/viewport_width=1120
-window/size/viewport_height=720
-window/size/window_width_override=1120
-window/size/window_height_override=720
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/size/window_width_override=1280
+window/size/window_height_override=800
 window/stretch/mode="canvas_items"
 window/stretch/aspect="keep"
 
@@ -34,4 +34,5 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/default_filters/use_nearest_mipmap_filter=false
 textures/canvas_textures/default_texture_filter=0
-environment/defaults/default_clear_color=Color(0.071, 0.102, 0.102, 1)
+environment/defaults/default_clear_color=Color(0.13, 0.09, 0.07, 1)
+2d/snap/snap_2d_transforms_to_pixel=true

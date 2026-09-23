@@ -2,7 +2,7 @@
 
 Godot 像素风餐厅经营游戏。当前为阶段一：单人、单桌、单菜品的完整服务原型。
 
-![阶段一实际运行画面](docs/stage1-preview.png)
+![图片素材版实际运行画面](docs/image-assets-preview.webp)
 
 ## 运行
 
@@ -17,7 +17,7 @@ Godot 像素风餐厅经营游戏。当前为阶段一：单人、单桌、单�
 | 按键 | 功能 |
 |---|---|
 | WASD / 方向键 | 移动 |
-| E / 空格 | 靠近工作台下方标记后交互 |
+| E / 空格 | 靠近工作台或餐桌正下方后交互 |
 | Esc | 暂停 / 继续 |
 | F1 | 开关调试信息 |
 | N（调试模式） | 空桌时立即生成顾客 |
@@ -27,7 +27,7 @@ Godot 像素风餐厅经营游戏。当前为阶段一：单人、单桌、单�
 
 ## 服务流程
 
-顾客自动点单 → 左上烹饪台制作 → 出餐台取餐 → 餐桌下方上菜 → 顾客用餐并自动付款 → 顾客离店 → 收盘 → 左下回收台交付 → 迎接下一位顾客。
+顾客自动点单 → 烹饪台制作 → 出餐台取餐 → 餐桌下方上菜 → 顾客用餐并自动付款 → 顾客离店 → 收盘 → 回收台交付 → 迎接下一位顾客。
 
 - 菜品为香煎蛋饭，每单 18 金币，食材暂时无限。
 - 烹饪约 2.8 秒，制作时主角暂停移动；用餐约 4 秒。
@@ -37,7 +37,7 @@ Godot 像素风餐厅经营游戏。当前为阶段一：单人、单桌、单�
 
 ## 已实现范围
 
-- 原创代码绘制的像素占位图：主角、顾客、场景、家具和餐食。
+- 用户提供的餐厅背景与 imagegen 生成的像素图片：主角、顾客、家具和餐食；单图均小于 400KB。
 - 主角移动、方向表现、墙体和家具碰撞、距离交互与手持物品。
 - 顾客进店、入座、点单、用餐、付款和离店。
 - 独立订单状态、稳定任务标识，以及做菜、上菜、收盘工作接口。
@@ -54,7 +54,11 @@ scripts/service_model.gd    服务规则、订单、工作任务、物品与结�
 scripts/restaurant.gd       餐厅布置、交互、界面与角色协调
 scripts/player.gd           主角移动与碰撞
 scripts/customer.gd         单桌顾客固定路线与进出店行为
-scripts/pixel_art.gd        可替换的原创像素占位绘制
+scripts/avatar.gd           图片动画与手持物显示
+scripts/station.gd          家具交互与台面物品
+scenes/actors/             主角、顾客和可替换头像场景
+scenes/furniture/          可独立摆放的家具场景
+assets/                   压缩后的背景、角色、家具与物品图片
 scripts/pause_input.gd      暂停状态下仍可使用的输入
 tests/                     规则、场景测试与实际画面预览
 docs/                      开发计划、状态规则和阶段验收
@@ -70,6 +74,7 @@ docs/                      开发计划、状态规则和阶段验收
 godot --headless --path . --editor --import --quit
 godot --headless --path . --script tests/test_service_model.gd
 godot --headless --path . --script tests/test_scene.gd
+godot --headless --path . --script tests/test_assets.gd
 ```
 
 macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。
@@ -80,15 +85,18 @@ macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。
 godot --path . --script tests/capture_preview.gd
 ```
 
-输出为 `test-results/stage1-preview.png`，不进入版本管理。GitHub Actions 对推送与拉取请求自动运行项目导入和两组测试，不包含可执行安装包导出。
+输出烹饪、搬运、上菜三张预览到 `test-results/`，并更新文档配图 `docs/image-assets-preview.webp`。GitHub Actions 对推送与拉取请求自动运行项目导入和三组测试，不包含可执行安装包导出。
 
 ## 分支约定
 
 - `main`：初始 Godot 项目基线。
-- `feature/stage-1-service-loop`：当前阶段一实现。
+- `feature/stage-1-service-loop`：阶段一服务原型。
+- `feature/image-assets`：当前图片素材替换与场景拆分。
 - 每个后续阶段从已验收的代码新建开发分支，完成验证后再合并。
 - `.godot/`、构建输出和测试临时结果不进入仓库；Godot 的 `.uid` 文件进入仓库。
 
 本次本地提交使用仓库级身份 `Codex <codex@localhost>`，未修改电脑的全局 Git 身份设置。可在后续提交前改为项目维护者的 Git 身份。
 
 详见 [阶段一验收记录](docs/stage-1.md) 和 [完整分阶段开发计划](docs/development-plan.md)。
+
+图片尺寸规范、家具替换方法及原图内置收银台的限制，详见 [图片素材与替换说明](docs/image-assets.md)。

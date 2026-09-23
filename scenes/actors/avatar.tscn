@@ -1,0 +1,16 @@
+[gd_scene load_steps=4 format=3]
+[ext_resource type="Script" path="res://scripts/avatar.gd" id="1"]
+[ext_resource type="SpriteFrames" path="res://assets/characters/chef_frames.tres" id="2"]
+[ext_resource type="Texture2D" path="res://assets/items/meal.png" id="3"]
+[node name="Avatar" type="Node2D"]
+texture_filter = 1
+script = ExtResource("1")
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+position = Vector2(0, -44)
+sprite_frames = ExtResource("2")
+animation = &"idle_down"
+[node name="HeldItem" type="Sprite2D" parent="."]
+visible = false
+position = Vector2(0, -27)
+texture = ExtResource("3")
+hframes = 2
