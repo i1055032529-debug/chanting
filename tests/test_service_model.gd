@@ -3,6 +3,7 @@ extends SceneTree
 const Model = preload("res://scripts/service_model.gd")
 var checks := 0
 var failures := 0
+const DISH := {"success": true, "doneness": 82.0, "burn": 0.0, "score": 60, "grade": "合格"}
 
 
 func _initialize() -> void:
@@ -33,9 +34,12 @@ func _run() -> void:
 		check(game.interact("stove"), "start cooking")
 		check(not game.interact("stove"), "cannot duplicate cooking")
 		check(not game.interact("pass"), "cannot collect unfinished food")
-		game.advance(Model.COOK_SECONDS / 2.0)
-		check(game.phase == Model.Phase.COOKING, "cooking respects duration")
-		game.advance(Model.COOK_SECONDS)
+		game.advance(1.4)
+		check(game.phase == Model.Phase.COOKING, "cooking waits for player result")
+		game.advance(10.0)
+		check(game.phase == Model.Phase.COOKING, "timer alone never produces food")
+		check(game.complete_cooking(game.order_id, game.cooking_attempt, DISH), "accept valid cooking result")
+		check(not game.complete_cooking(game.order_id, game.cooking_attempt, DISH), "duplicate result rejected")
 		check(game.phase == Model.Phase.READY, "dish goes to counter")
 		check(not game.interact("stove"), "cannot remake a ready order")
 		check(game.interact("pass"), "pick up food")
@@ -74,12 +78,38 @@ func _run() -> void:
 	game.request_customer()
 	game.seat_customer()
 	game.interact("stove")
-	game.advance(Model.COOK_SECONDS)
+	game.complete_cooking(game.order_id, game.cooking_attempt, DISH)
 	game.interact("pass")
 	game.reset()
 	check(game.phase == Model.Phase.EMPTY and game.carrying == Model.Carry.NONE, "reset releases active items")
 	check(game.coins == 0 and game.order_id == 0 and game.tasks.is_empty(), "reset clears counters and tasks")
 	game.advance(-1.0)
 	check(game.spawn_clock == 0.0, "negative delta ignored")
+	# A canceled or pre-reset attempt cannot deliver into a later session.
+	game.request_customer()
+	game.seat_customer()
+	game.interact("stove")
+	var stale_order: int = game.order_id
+	var stale_attempt: int = game.cooking_attempt
+	check(game.cancel_cooking(stale_order, stale_attempt), "abandon returns order to waiting")
+	check(game.tasks.size() == 1 and game.tasks[0].state == "pending", "abandon releases cooking task")
+	game.interact("stove")
+	check(not game.complete_cooking(stale_order, stale_attempt, DISH), "old attempt cannot replace current attempt")
+	check(not game.complete_cooking(game.order_id, game.cooking_attempt, {"success": true, "doneness": 20.0, "burn": 0.0}), "raw result rejected")
+	check(not game.complete_cooking(game.order_id, game.cooking_attempt, {"success": false}), "failed cooking cannot create food")
+	game.reset()
+	game.request_customer()
+	game.seat_customer()
+	game.interact("stove")
+	check(not game.complete_cooking(stale_order, stale_attempt, DISH), "reset invalidates earlier callbacks even when order IDs repeat")
+	var premium := {"success": true, "doneness": 98.0, "burn": 0.0, "score": 100, "grade": "出色"}
+	check(game.complete_cooking(game.order_id, game.cooking_attempt, premium), "premium result accepted")
+	check(game.coins == 0 and game.quality_bonus == 6, "bonus waits for customer payment")
+	game.interact("pass")
+	game.interact("table")
+	game.advance(Model.EAT_SECONDS)
+	check(game.coins == 24, "customer pays base plus quality bonus once")
+	game.advance(100.0)
+	check(game.coins == 24, "bonus cannot be paid twice")
 	print("SERVICE MODEL: %d checks, %d failures; 10 complete service cycles." % [checks, failures])
 	quit(1 if failures else 0)

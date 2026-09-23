@@ -1,6 +1,6 @@
 # 一人食堂 · Chanting
 
-Godot 像素风餐厅经营游戏。当前为阶段一：单人、单桌、单菜品的完整服务原型。
+Godot 像素风餐厅经营游戏。当前已完成阶段一服务原型，并接入阶段二的独立烹饪小游戏。
 
 ![图片素材版实际运行画面](docs/image-assets-preview.webp)
 
@@ -30,7 +30,8 @@ Godot 像素风餐厅经营游戏。当前为阶段一：单人、单桌、单�
 顾客自动点单 → 烹饪台制作 → 出餐台取餐 → 餐桌下方上菜 → 顾客用餐并自动付款 → 顾客离店 → 收盘 → 回收台交付 → 迎接下一位顾客。
 
 - 菜品为香煎蛋饭，每单 18 金币，食材暂时无限。
-- 烹饪约 2.8 秒，制作时主角暂停移动；用餐约 4 秒。
+- 烹饪进入独立界面：按住空格加热、松开降温，F 抓时机翻炒，E 出锅；制作时主角暂停移动，餐厅继续运转。
+- 熟度 80 可出锅，95–104 为最佳范围；品质奖励为 0 / 2 / 6 金币，顾客付款时一起结算。B 放弃本次并保留订单，烧焦可以重做；用餐约 4 秒。
 - 手里只能拿一件物品；端起的食物可以放回出餐台。
 - 餐盘送到回收台后，桌子才会恢复可用。
 - 收盘完成后自动接待下一位顾客。
@@ -44,7 +45,7 @@ Godot 像素风餐厅经营游戏。当前为阶段一：单人、单桌、单�
 - 金币、订单状态、步骤提示、进度条、暂停、确认重置和调试入口。
 - 10 轮服务规则回归测试，以及实际场景集成测试。
 
-多顾客、耐心、地面清洁、烹饪小游戏、员工、采购、升级与存档留在后续阶段。
+多顾客、耐心、地面清洁、员工、采购、升级与存档留在后续阶段。
 
 ## 代码结构
 
@@ -59,6 +60,8 @@ scripts/station.gd          家具交互与台面物品
 scenes/actors/             主角、顾客和可替换头像场景
 scenes/furniture/          可独立摆放的家具场景
 assets/                   压缩后的背景、角色、家具与物品图片
+scenes/cooking/            独立烹饪界面
+scripts/cooking/           烹饪规则、界面、可替换像素表现
 scripts/pause_input.gd      暂停状态下仍可使用的输入
 tests/                     规则、场景测试与实际画面预览
 docs/                      开发计划、状态规则和阶段验收
@@ -75,6 +78,8 @@ godot --headless --path . --editor --import --quit
 godot --headless --path . --script tests/test_service_model.gd
 godot --headless --path . --script tests/test_scene.gd
 godot --headless --path . --script tests/test_assets.gd
+godot --headless --path . --script tests/test_cooking_model.gd
+godot --headless --path . --script tests/test_cooking_screen.gd
 ```
 
 macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。
@@ -85,13 +90,14 @@ macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。
 godot --path . --script tests/capture_preview.gd
 ```
 
-输出烹饪、搬运、上菜三张预览到 `test-results/`，并更新文档配图 `docs/image-assets-preview.webp`。GitHub Actions 对推送与拉取请求自动运行项目导入和三组测试，不包含可执行安装包导出。
+输出烹饪、搬运、上菜三张预览到 `test-results/`，并更新餐厅配图 `docs/image-assets-preview.webp` 和小游戏配图 `docs/cooking-preview.webp`。GitHub Actions 对推送与拉取请求自动运行项目导入和五组测试，不包含可执行安装包导出。
 
 ## 分支约定
 
 - `main`：初始 Godot 项目基线。
 - `feature/stage-1-service-loop`：阶段一服务原型。
-- `feature/image-assets`：当前图片素材替换与场景拆分。
+- `feature/image-assets`：图片素材替换与场景拆分。
+- `feature/cooking-minigame`：独立烹饪小游戏。
 - 每个后续阶段从已验收的代码新建开发分支，完成验证后再合并。
 - `.godot/`、构建输出和测试临时结果不进入仓库；Godot 的 `.uid` 文件进入仓库。
 
@@ -100,3 +106,5 @@ godot --path . --script tests/capture_preview.gd
 详见 [阶段一验收记录](docs/stage-1.md) 和 [完整分阶段开发计划](docs/development-plan.md)。
 
 图片尺寸规范、家具替换方法及原图内置收银台的限制，详见 [图片素材与替换说明](docs/image-assets.md)。
+
+烹饪操作、参数与后续图片替换方式，详见 [烹饪小游戏说明](docs/cooking-minigame.md)。

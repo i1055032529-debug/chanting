@@ -2,6 +2,7 @@ extends Node2D
 
 const Model = preload("res://scripts/service_model.gd")
 const Customer = preload("res://scenes/actors/customer.tscn")
+const CookingScreen = preload("res://scenes/cooking/cooking_screen.tscn")
 const INTERACT_DISTANCE := 55.0
 const CREAM := Color("f4e5cd")
 const MUTED := Color("bea993")
@@ -25,6 +26,8 @@ var nearest := ""
 var toast := "欢迎开店！用 WASD 移动，靠近工作台按 E 交互。"
 var toast_time := 8.0
 var elapsed := 0.0
+var cooking_screen: Control
+var cooking_layer: CanvasLayer
 
 
 func _ready() -> void:
@@ -39,6 +42,7 @@ func _ready() -> void:
 	model.departure_requested.connect(_customer_leave)
 	model.changed.connect(_refresh_ui)
 	model.feedback.connect(_show_feedback)
+	model.cooking_requested.connect(_open_cooking)
 	_refresh_ui()
 
 
@@ -46,12 +50,12 @@ func _process(delta: float) -> void:
 	elapsed += delta
 	toast_time = maxf(0.0, toast_time - delta)
 	model.advance(delta)
-	player.locked = model.phase == Model.Phase.COOKING
+	player.locked = is_instance_valid(cooking_screen) or model.phase == Model.Phase.COOKING
 	player.carried = model.carrying
 	nearest = closest_target()
 	prompt.text = "[ E ]  %s · %s" % [stations[nearest].display_name, _action_hint(nearest)] if not nearest.is_empty() else "靠近工作台或餐桌的正下方，按 E 交互"
 	labels.toast.text = toast if toast_time > 0.0 else _next_step()
-	bar.visible = model.phase in [Model.Phase.COOKING, Model.Phase.EATING]
+	bar.visible = model.phase == Model.Phase.EATING
 	bar.value = model.progress() * 100.0
 	debug_label.text = "DEBUG / F1 关闭\nN 生成顾客 · R 重置\n订单 #%d · %s\n位置 (%d, %d)\n任务 %s" % [model.order_id, model.phase_label(), player.position.x, player.position.y, str(model.tasks)]
 	for station_id: String in stations:
@@ -61,6 +65,7 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if is_instance_valid(cooking_screen): return
 	if event.is_action_pressed("interact") and not event.is_echo():
 		try_interact(closest_target())
 		get_viewport().set_input_as_handled()
@@ -85,6 +90,7 @@ func closest_target() -> String:
 
 
 func try_interact(target: String) -> bool:
+	if is_instance_valid(cooking_screen): return false
 	if target.is_empty() or not stations.has(target):
 		_show_feedback("靠近工作台或餐桌的正下方，再按 E 交互。")
 		return false
@@ -98,6 +104,7 @@ func try_interact(target: String) -> bool:
 
 
 func reset_run() -> void:
+	_close_cooking()
 	if is_instance_valid(customer):
 		customer.free()
 	customer = null
@@ -111,7 +118,7 @@ func reset_run() -> void:
 
 
 func _setup_input() -> void:
-	var bindings := {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT], "move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN], "interact": [KEY_E, KEY_SPACE], "pause_game": [KEY_ESCAPE], "toggle_debug": [KEY_F1], "debug_spawn": [KEY_N], "debug_reset": [KEY_R]}
+	var bindings := {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT], "move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN], "interact": [KEY_E, KEY_SPACE], "pause_game": [KEY_ESCAPE], "toggle_debug": [KEY_F1], "debug_spawn": [KEY_N], "debug_reset": [KEY_R], "cook_heat": [KEY_SPACE], "cook_stir": [KEY_F], "cook_plate": [KEY_E], "cook_back": [KEY_B]}
 	for action: String in bindings:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
@@ -124,6 +131,37 @@ func _setup_input() -> void:
 
 func target_position(station_id: String) -> Vector2:
 	return stations[station_id].interaction_position()
+
+
+func _open_cooking(order_id: int, attempt_id: int) -> void:
+	if is_instance_valid(cooking_screen): return
+	player.locked = true
+	player.velocity = Vector2.ZERO
+	cooking_layer = CanvasLayer.new()
+	cooking_layer.layer = 10
+	cooking_layer.process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_child(cooking_layer)
+	cooking_screen = CookingScreen.instantiate()
+	cooking_screen.order_id = order_id
+	cooking_screen.completed.connect(func(result: Dictionary):
+		if not model.complete_cooking(order_id, attempt_id, result):
+			model.cancel_cooking(order_id, attempt_id)
+		_close_cooking())
+	cooking_screen.abandoned.connect(func():
+		model.cancel_cooking(order_id, attempt_id)
+		_close_cooking())
+	cooking_screen.pause_requested.connect(_toggle_pause)
+	cooking_layer.add_child(cooking_screen)
+
+
+func _close_cooking() -> void:
+	if is_instance_valid(cooking_screen):
+		cooking_screen.active = false
+		cooking_screen.hide()
+	if is_instance_valid(cooking_layer): cooking_layer.queue_free()
+	cooking_screen = null
+	cooking_layer = null
+	if is_instance_valid(player): player.locked = false
 
 
 func _build_room() -> void:
@@ -224,16 +262,30 @@ func _build_ui() -> void:
 	reset_dialog.canceled.connect(func():
 		get_tree().paused = pause_panel.visible)
 	ui.add_child(reset_dialog)
+	# Pause/reset remain above the dedicated cooking screen and work while paused.
+	var modal_layer := CanvasLayer.new()
+	modal_layer.layer = 30
+	modal_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(modal_layer)
+	var modal_root := Control.new()
+	modal_root.theme = ui.theme
+	modal_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	modal_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	modal_layer.add_child(modal_root)
+	pause_panel.reparent(modal_root)
+	reset_dialog.reparent(modal_root)
 
 
 func _toggle_pause() -> void:
 	if reset_dialog.visible:
 		return
 	get_tree().paused = not get_tree().paused
+	if is_instance_valid(cooking_screen): cooking_screen.clear_heat()
 	pause_panel.visible = get_tree().paused
 
 
 func _open_reset() -> void:
+	if is_instance_valid(cooking_screen): cooking_screen.clear_heat()
 	get_tree().paused = true
 	reset_dialog.popup_centered()
 
@@ -291,7 +343,7 @@ func _refresh_ui() -> void:
 	labels.coins.text = "%d 金币" % model.coins
 	labels.served.text = "已接待 %d 位" % model.served
 	labels.dish.text = "香煎蛋饭" if model.phase not in [Model.Phase.EMPTY, Model.Phase.ARRIVING] else "等待顾客入座"
-	labels.order.text = "订单 #%03d  ·  售价 18 金币" % model.order_id if model.phase not in [Model.Phase.EMPTY, Model.Phase.ARRIVING] else "每一桌好生意，从干净餐桌开始。"
+	labels.order.text = "订单 #%03d  ·  售价 %d 金币" % [model.order_id, Model.PRICE + model.quality_bonus] if model.phase not in [Model.Phase.EMPTY, Model.Phase.ARRIVING] else "每一桌好生意，从干净餐桌开始。"
 	labels.status.text = "● " + model.phase_label()
 	labels.hands.text = ["双手空闲", "一份香煎蛋饭", "用过的餐盘"][model.carrying]
 	var step := 0
@@ -308,7 +360,7 @@ func _next_step() -> String:
 	match model.phase:
 		Model.Phase.EMPTY, Model.Phase.ARRIVING: return "顾客会自动入店点单。用 WASD 熟悉一下你的小店。"
 		Model.Phase.WAITING: return "下一步：到烹饪台下方按 E，制作香煎蛋饭。"
-		Model.Phase.COOKING: return "正在做菜。第一阶段使用短时计时制作，无需额外操作。"
+		Model.Phase.COOKING: return "正在掌勺：空格控火、F 翻炒、E 出锅。"
 		Model.Phase.READY: return "下一步：到出餐台下方按 E，拿起食物。"
 		Model.Phase.CARRIED: return "下一步：到 01 号桌下方按 E，把食物送给顾客。"
 		Model.Phase.EATING: return "顾客正在用餐，稍后会自动付款。"

@@ -14,12 +14,19 @@ func _capture() -> void:
 		game.customer._process(10.0)
 	game.player.position = game.target_position("stove")
 	game.try_interact("stove")
-	game._process(1.2)
+	game.cooking_screen.start_round()
+	game.cooking_screen.rules.advance(1.6, true)
+	game.cooking_screen._refresh()
 	await process_frame
 	await RenderingServer.frame_post_draw
 	DirAccess.make_dir_recursive_absolute("res://test-results")
 	var error := root.get_texture().get_image().save_png("res://test-results/stage1-preview.png")
-	game._process(3.0)
+	root.get_texture().get_image().save_webp("res://docs/cooking-preview.webp", false, 0.85)
+	preload("res://tests/cooking_bot.gd").finish(game.cooking_screen.rules)
+	await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png("res://test-results/cooking-result.png")
+	game.cooking_screen.acknowledge()
 	game.player.position = game.target_position("pass")
 	game.try_interact("pass")
 	game._process(0.0)

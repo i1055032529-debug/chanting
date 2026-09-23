@@ -7,11 +7,13 @@ signal feedback(message: String)
 signal customer_requested
 signal departure_requested
 signal payment_received(amount: int)
+signal cooking_requested(order_id: int, attempt_id: int)
+
+const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
 
 enum Phase { EMPTY, ARRIVING, WAITING, COOKING, READY, CARRIED, EATING, LEAVING, DIRTY, CLEARING }
 enum Carry { NONE, FOOD, PLATE }
 
-const COOK_SECONDS := 2.8
 const EAT_SECONDS := 4.0
 const ARRIVAL_DELAY := 2.0
 const PRICE := 18
@@ -27,6 +29,9 @@ var spawn_clock := 0.0
 var paid := false
 var tasks: Array[Dictionary] = []
 var next_task_id := 1
+var cooking_attempt := 0
+var dish_result: Dictionary = {}
+var quality_bonus := 0
 
 
 func advance(delta: float) -> void:
@@ -39,24 +44,21 @@ func advance(delta: float) -> void:
 				request_customer()
 		Phase.COOKING:
 			clock += delta
-			if clock >= COOK_SECONDS:
-				_finish_task("cook")
-				_new_task("serve")
-				_set_phase(Phase.READY)
-				feedback.emit("出餐啦！到出餐台按 E 取餐。")
 		Phase.EATING:
 			clock += delta
 			if clock >= EAT_SECONDS:
 				_settle_once()
 				_set_phase(Phase.LEAVING)
 				departure_requested.emit()
-				feedback.emit("顾客已付款 +18 金币，离店后就可以收盘。")
+				feedback.emit("顾客已付款 +%d 金币（品质奖励 +%d），离店后可收盘。" % [PRICE + quality_bonus, quality_bonus])
 
 
 func request_customer() -> bool:
 	if phase != Phase.EMPTY:
 		return _reject("桌子还未恢复可用，请先完成本桌服务。")
 	paid = false
+	dish_result.clear()
+	quality_bonus = 0
 	tasks.clear()
 	_set_phase(Phase.ARRIVING)
 	customer_requested.emit()
@@ -92,8 +94,10 @@ func interact(target: String) -> bool:
 			if phase != Phase.WAITING:
 				return _reject("暂时没有需要制作的订单。")
 			_start_task("cook")
+			cooking_attempt += 1
 			_set_phase(Phase.COOKING)
 			feedback.emit("正在制作香煎蛋饭……")
+			cooking_requested.emit(order_id, cooking_attempt)
 			return true
 		"pass":
 			if carrying == Carry.FOOD and phase == Phase.CARRIED:
@@ -139,6 +143,32 @@ func interact(target: String) -> bool:
 	return _reject("没有可交互的目标。")
 
 
+func complete_cooking(expected_order: int, expected_attempt: int, result: Dictionary) -> bool:
+	if phase != Phase.COOKING or order_id != expected_order or cooking_attempt != expected_attempt:
+		return false
+	if not result.get("success", false) or result.get("doneness", 0.0) < CookingRules.MIN_DONENESS or result.get("burn", 100.0) >= CookingRules.BURN_LIMIT:
+		return false
+	dish_result = result.duplicate(true)
+	quality_bonus = CookingRules.bonus_for_result(result)
+	_finish_task("cook")
+	_new_task("serve")
+	_set_phase(Phase.READY)
+	feedback.emit("%s料理已出锅！到出餐台取餐，品质奖励 +%d 金币。" % [result.get("grade", "合格"), quality_bonus])
+	return true
+
+
+func cancel_cooking(expected_order: int, expected_attempt: int) -> bool:
+	if phase != Phase.COOKING or order_id != expected_order or cooking_attempt != expected_attempt:
+		return false
+	for task in tasks:
+		if task.kind == "cook":
+			task.state = "pending"
+			task.executor = ""
+	_set_phase(Phase.WAITING)
+	feedback.emit("已返回餐厅，本次烹饪进度不保留。订单仍在，可以重新制作。")
+	return true
+
+
 func reset() -> void:
 	phase = Phase.EMPTY
 	carrying = Carry.NONE
@@ -151,12 +181,14 @@ func reset() -> void:
 	paid = false
 	tasks.clear()
 	next_task_id = 1
+	# Never reuse attempt IDs: a delayed result must not affect a new game/order.
+	cooking_attempt += 1
+	dish_result.clear()
+	quality_bonus = 0
 	changed.emit()
 
 
 func progress() -> float:
-	if phase == Phase.COOKING:
-		return clampf(clock / COOK_SECONDS, 0.0, 1.0)
 	if phase == Phase.EATING:
 		return clampf(clock / EAT_SECONDS, 0.0, 1.0)
 	return 0.0
@@ -180,9 +212,9 @@ func _settle_once() -> void:
 	if paid:
 		return
 	paid = true
-	coins += PRICE
+	coins += PRICE + quality_bonus
 	served += 1
-	payment_received.emit(PRICE)
+	payment_received.emit(PRICE + quality_bonus)
 	changed.emit()
 
 

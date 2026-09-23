@@ -1,6 +1,7 @@
 extends SceneTree
 
 const Restaurant = preload("res://scenes/restaurant.tscn")
+const Bot = preload("res://tests/cooking_bot.gd")
 const Model = preload("res://scripts/service_model.gd")
 var checks := 0
 var failures := 0
@@ -33,14 +34,21 @@ func _run() -> void:
 	game.player.position = game.target_position("stove")
 	check(game.closest_target() == "stove", "operation position selects stove")
 	check(game.try_interact("stove"), "scene starts cooking")
-	game._process(Model.COOK_SECONDS)
+	check(is_instance_valid(game.cooking_screen), "stove opens dedicated cooking screen")
+	check(game.player.locked, "restaurant movement locked during cooking")
+	check(not game.try_interact("pass"), "cooking blocks restaurant interaction")
+	game.cooking_screen.start_round()
+	var result: Dictionary = Bot.finish(game.cooking_screen.rules)
+	check(game.model.phase == Model.Phase.COOKING, "result waits for acknowledgment")
+	game.cooking_screen.acknowledge()
+	check(not is_instance_valid(game.cooking_screen), "acknowledgment closes cooking screen")
 	check(game.model.phase == Model.Phase.READY, "scene updates cooking")
 	game.player.position = game.target_position("pass")
 	check(game.try_interact("pass"), "scene picks up food")
 	game.player.position = game.target_position("table")
 	check(game.try_interact("table"), "scene serves food")
 	game._process(Model.EAT_SECONDS)
-	check(game.model.coins == 18 and game.customer.leaving, "payment and departure connected")
+	check(game.model.coins == 18 + preload("res://scripts/cooking/cooking_model.gd").bonus_for_result(result) and game.customer.leaving, "payment and departure connected")
 	for i in range(3):
 		game.customer._process(10.0)
 	check(game.model.phase == Model.Phase.DIRTY, "departure enables clearing")

@@ -39,6 +39,8 @@ jobs:
           godot --headless --path . --script tests/test_service_model.gd 2>&1 | tee test-results/model.log
           godot --headless --path . --script tests/test_scene.gd 2>&1 | tee test-results/scene.log
           godot --headless --path . --script tests/test_assets.gd 2>&1 | tee test-results/assets.log
+          godot --headless --path . --script tests/test_cooking_model.gd 2>&1 | tee test-results/cooking-model.log
+          godot --headless --path . --script tests/test_cooking_screen.gd 2>&1 | tee test-results/cooking-screen.log
           if grep -E 'SCRIPT ERROR:|^ERROR:|FAIL:' test-results/*.log; then
             exit 1
           fi
