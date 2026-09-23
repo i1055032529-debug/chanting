@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  stage-one:
+  game-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -36,7 +36,8 @@ jobs:
           set -euo pipefail
           mkdir -p test-results
           godot --headless --path . --editor --import --quit 2>&1 | tee test-results/import.log
-          godot --headless --path . --script tests/test_service_model.gd 2>&1 | tee test-results/model.log
+          godot --headless --path . --script tests/test_service_model.gd 2>&1 | tee test-results/stage-one-model.log
+          godot --headless --path . --script tests/test_day_model.gd 2>&1 | tee test-results/day-model.log
           godot --headless --path . --script tests/test_scene.gd 2>&1 | tee test-results/scene.log
           godot --headless --path . --script tests/test_assets.gd 2>&1 | tee test-results/assets.log
           godot --headless --path . --script tests/test_cooking_model.gd 2>&1 | tee test-results/cooking-model.log
@@ -48,5 +49,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stage-one-test-logs
+          name: game-test-logs
           path: test-results/*.log

@@ -15,6 +15,8 @@ const PERFECT_START := 0.76
 const PERFECT_END := 0.86
 const FIXED_STEP := 1.0 / 120.0
 
+var recipe_speed := 1.0
+var recipe_id := "rice"
 var state: State = State.READY
 var temperature := 35.0
 var doneness := 0.0
@@ -48,7 +50,7 @@ func _tick(delta: float, heating: bool) -> void:
 	elapsed += delta
 	stir_cooldown = maxf(0.0, stir_cooldown - delta)
 	temperature = clampf(temperature + (38.0 if heating else -22.0) * delta, 25.0, 120.0)
-	doneness += clampf((temperature - 35.0) / 65.0, 0.0, 1.35) * 10.0 * delta
+	doneness += clampf((temperature - 35.0) / 65.0, 0.0, 1.35) * 10.0 * recipe_speed * delta
 	burn += maxf(temperature - 94.0, 0.0) * 0.32 * delta
 	if temperature > 45.0:
 		stir_progress += (0.25 + temperature / 230.0) * delta

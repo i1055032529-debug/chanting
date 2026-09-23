@@ -1,6 +1,6 @@
 extends SceneTree
-
 const Bot = preload("res://tests/cooking_bot.gd")
+const Day = preload("res://scripts/day_model.gd")
 var checks := 0
 var failures := 0
 
@@ -26,7 +26,7 @@ func _run() -> void:
 	root.add_child(game)
 	await process_frame
 	game.model.request_customer()
-	for i in range(3): game.customer._process(10.0)
+	for i in range(3): game.customers[1]._process(10.0)
 	game.player.position = game.target_position("stove")
 	key(KEY_E)
 	key(KEY_E, false)
@@ -48,7 +48,7 @@ func _run() -> void:
 	check(not paused and not screen.heating, "resume does not retain heat")
 	key(KEY_B)
 	key(KEY_B, false)
-	check(game.cooking_screen == null and game.model.phase == game.Model.Phase.WAITING, "cancel keeps order available")
+	check(game.cooking_screen == null and game.model.orders[1].state == "waiting", "cancel keeps order available")
 	await process_frame
 	game.try_interact("stove")
 	screen = game.cooking_screen
@@ -61,12 +61,13 @@ func _run() -> void:
 	Bot.finish(screen.rules)
 	key(KEY_E)
 	key(KEY_E, false)
-	check(game.cooking_screen == null and game.model.phase == game.Model.Phase.READY, "acknowledge returns with food ready")
-	check(game.model.carrying == game.Model.Carry.NONE, "acknowledge does not trigger restaurant pickup")
+	check(game.cooking_screen == null and game.model.pass_order_id == 1, "acknowledge returns with food ready")
+	check(game.model.carrying == Day.Carry.NONE, "acknowledge does not trigger restaurant pickup")
 	game.reset_run()
 	await process_frame
 	game.model.request_customer()
-	for i in range(3): game.customer._process(10.0)
+	var id: int = game.model.next_order_id - 1
+	for i in range(3): game.customers[id]._process(10.0)
 	game.player.position = game.target_position("stove")
 	game.try_interact("stove")
 	game.reset_run()

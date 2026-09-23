@@ -49,9 +49,9 @@ position = Vector2(900, 384)
 [node name="Sink" parent="World" instance=ExtResource("6")]
 position = Vector2(1100, 384)
 [node name="Table" parent="World" instance=ExtResource("7")]
-position = Vector2(780, 558)
+position = Vector2(530, 460)
 [node name="Chair" parent="World" instance=ExtResource("8")]
-position = Vector2(880, 558)
+position = Vector2(630, 460)
 [node name="Player" parent="World" instance=ExtResource("3")]
 position = Vector2(500, 520)
 [node name="PlayerStart" type="Marker2D" parent="."]

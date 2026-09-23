@@ -27,6 +27,7 @@ func _draw() -> void:
 	var heat: float = cooking.temperature if cooking else 35.0
 	var done: float = cooking.doneness if cooking else 0.0
 	var charred: float = cooking.burn if cooking else 0.0
+	var noodles: bool = cooking != null and cooking.recipe_id == "noodles"
 	# Counter and stove: deliberately coarse 3x pixels, independently replaceable.
 	_box(6, 96, 224, 34, "493324")
 	for x in range(6, 229, 28): _box(x, 96, 2, 34, "35291f")
@@ -49,16 +50,19 @@ func _draw() -> void:
 	_ellipse(Vector2(114, 64), Vector2(61, 25), Color("1c2525"))
 	_ellipse(Vector2(114, 65), Vector2(55, 21), Color("3b3930"))
 	var jump := sin(clampf(toss / 0.45, 0.0, 1.0) * PI) * 22.0
-	var rice := Color("f1deb0").lerp(Color("dba24b"), clampf(done / 100.0, 0.0, 1.0)).lerp(Color("614330"), charred / 90.0)
+	var rice := (Color("ecc085") if noodles else Color("f1deb0")).lerp(Color("d9784c") if noodles else Color("dba24b"), clampf(done / 100.0, 0.0, 1.0)).lerp(Color("614330"), charred / 90.0)
 	for i in range(46):
 		var x := 73 + (i * 23) % 85
 		var y := 50 + (i * 13) % 25
 		var lift := jump * (0.5 + (i % 3) * 0.2)
 		draw_rect(Rect2(x, roundf(y - lift), 5, 3), rice.lightened((i % 3) * 0.06))
-		if i % 7 == 0: _box(x + 2, y - lift - 2, 3, 3, "769155")
+		if i % 7 == 0: _box(x + 2, y - lift - 2, 3, 3, "b24735" if noodles else "769155")
 	# Egg and spatula use the same low-resolution pixel coordinates.
-	_ellipse(Vector2(117, 61 - jump), Vector2(17, 9), Color("fff0c5"))
-	_ellipse(Vector2(119, 60 - jump), Vector2(7, 5), Color("eab744"))
+	if noodles:
+		for i in range(8): _box(88 + i * 9, 53 + (i % 3) * 5 - jump, 14, 3, "f4d092")
+	else:
+		_ellipse(Vector2(117, 61 - jump), Vector2(17, 9), Color("fff0c5"))
+		_ellipse(Vector2(119, 60 - jump), Vector2(7, 5), Color("eab744"))
 	_box(160, 44 - jump / 2, 12, 21, "bdb7a0")
 	_box(164, 25 - jump / 2, 4, 23, "8e694a")
 	if heat > 65.0:

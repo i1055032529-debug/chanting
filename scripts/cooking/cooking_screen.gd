@@ -15,6 +15,9 @@ const RED := Color("e59172")
 
 var rules := Rules.new()
 var order_id := 0
+var recipe_id := "rice"
+var recipe_name := "香煎蛋饭"
+var recipe_speed := 1.0
 var heating := false
 var active := true
 var feedback_left := 0.0
@@ -35,6 +38,8 @@ func _ready() -> void:
 	theme = Theme.new()
 	theme.default_font = font
 	theme.default_font_size = 16
+	rules.recipe_speed = recipe_speed
+	rules.recipe_id = recipe_id
 	_build_ui()
 	_connect_rules()
 	_refresh()
@@ -50,6 +55,8 @@ func start_round() -> void:
 	if not active: return
 	if rules.state == Rules.State.RESULT:
 		rules = Rules.new()
+		rules.recipe_speed = recipe_speed
+		rules.recipe_id = recipe_id
 		_connect_rules()
 	if not rules.start(): return
 	intro.hide()
@@ -170,12 +177,12 @@ func _refresh() -> void:
 
 
 func _build_ui() -> void:
-	_label("eyebrow", "厨房  /  香煎蛋饭  /  订单 #%03d" % order_id, Vector2(38, 24), Vector2(760, 24), 14, MUTED)
+	_label("eyebrow", "厨房  /  %s  /  订单 #%03d" % [recipe_name, order_id], Vector2(38, 24), Vector2(760, 24), 14, MUTED)
 	_label("title", "掌勺时间", Vector2(33, 57), Vector2(400, 56), 38, CREAM)
 	_label("subtitle", "控好火，翻得准，让一份热饭更快出锅。", Vector2(38, 119), Vector2(700, 28), 17, MUTED)
-	_label("world", "餐厅继续营业", Vector2(1016, 93), Vector2(230, 30), 17, GREEN)
+	_label("world", "餐厅继续营业", Vector2(766, 51), Vector2(308, 106), 14, GREEN)
 	_button(self, "暂停  ·  Esc", Rect2(1088, 26, 160, 42), func(): pause_requested.emit())
-	_label("dish", "香煎蛋饭", Vector2(54, 184), Vector2(320, 28), 20, CREAM)
+	_label("dish", recipe_name, Vector2(54, 184), Vector2(320, 28), 20, CREAM)
 	_label("timer", "00.0 秒", Vector2(665, 184), Vector2(128, 30), 22, GOLD)
 	_label("fire", "离火降温", Vector2(54, 230), Vector2(200, 25), 14, MUTED)
 	_label("feedback", "", Vector2(54, 571), Vector2(720, 31), 16, CREAM)

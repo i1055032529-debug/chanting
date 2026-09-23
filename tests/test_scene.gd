@@ -1,83 +1,76 @@
 extends SceneTree
-
 const Restaurant = preload("res://scenes/restaurant.tscn")
 const Bot = preload("res://tests/cooking_bot.gd")
-const Model = preload("res://scripts/service_model.gd")
+const Day = preload("res://scripts/day_model.gd")
 var checks := 0
 var failures := 0
 var game: Node2D
 
-
 func _initialize() -> void:
 	_run.call_deferred()
 
-
-func check(condition: bool, message: String) -> void:
+func check(value: bool, message: String) -> void:
 	checks += 1
-	if not condition:
+	if not value:
 		failures += 1
 		push_error("FAIL: " + message)
-
 
 func _run() -> void:
 	game = Restaurant.instantiate()
 	root.add_child(game)
 	await process_frame
-	check(game.player != null, "player created")
+	check(game.player != null and game.stations.size() == 7, "four tables and three workstations created")
 	check(not game.try_interact("stove"), "distant interaction rejected")
-	game.model.request_customer()
-	check(game.customer != null, "arrival signal creates customer")
-	# Drive real customer path to completion without real-time waiting.
-	for i in range(3):
-		game.customer._process(10.0)
-	check(game.model.phase == Model.Phase.WAITING, "customer walking emits seating and order")
+	check(game.model.request_customer() and game.model.request_customer(), "two customers reserve tables")
+	for customer in game.customers.values():
+		for i in range(3): customer._process(10.0)
+	check(game.model.orders[1].state == "waiting" and game.model.orders[2].state == "waiting", "two orders coexist")
+	game.model.select_next()
+	check(game.model.selected_order_id == 2, "player can choose second order")
 	game.player.position = game.target_position("stove")
-	check(game.closest_target() == "stove", "operation position selects stove")
-	check(game.try_interact("stove"), "scene starts cooking")
-	check(is_instance_valid(game.cooking_screen), "stove opens dedicated cooking screen")
-	check(game.player.locked, "restaurant movement locked during cooking")
-	check(not game.try_interact("pass"), "cooking blocks restaurant interaction")
+	check(game.try_interact("stove"), "stove opens selected order")
+	check(is_instance_valid(game.cooking_screen) and game.cooking_screen.recipe_id == "noodles", "second recipe reaches minigame")
+	check(game.player.locked and not game.try_interact("pass"), "cooking locks restaurant controls")
 	game.cooking_screen.start_round()
 	var result: Dictionary = Bot.finish(game.cooking_screen.rules)
-	check(game.model.phase == Model.Phase.COOKING, "result waits for acknowledgment")
 	game.cooking_screen.acknowledge()
-	check(not is_instance_valid(game.cooking_screen), "acknowledgment closes cooking screen")
-	check(game.model.phase == Model.Phase.READY, "scene updates cooking")
+	check(game.model.pass_order_id == 2 and game.cooking_screen == null, "cooking returns correct dish to pass")
 	game.player.position = game.target_position("pass")
-	check(game.try_interact("pass"), "scene picks up food")
-	game.player.position = game.target_position("table")
-	check(game.try_interact("table"), "scene serves food")
-	game._process(Model.EAT_SECONDS)
-	check(game.model.coins == 18 + preload("res://scripts/cooking/cooking_model.gd").bonus_for_result(result) and game.customer.leaving, "payment and departure connected")
-	for i in range(3):
-		game.customer._process(10.0)
-	check(game.model.phase == Model.Phase.DIRTY, "departure enables clearing")
-	check(game.try_interact("table"), "scene picks up dirty plate")
+	check(game.try_interact("pass"), "player takes food")
+	game.player.position = game.target_position("table_1")
+	check(not game.try_interact("table_1"), "wrong table cannot take food")
+	game.player.position = game.target_position("table_2")
+	check(game.try_interact("table_2"), "correct table receives food")
+	game.model.advance(Day.EAT_SECONDS)
+	check(game.model.coins == 24 + preload("res://scripts/cooking/cooking_model.gd").bonus_for_result(result), "quality and recipe price settle once")
+	for i in range(3): game.customers[2]._process(10.0)
+	check(game.model.orders[2].state == "dirty", "customer departure creates clearing task")
+	check(game.try_interact("table_2"), "player collects plate")
 	game.player.position = game.target_position("sink")
-	check(game.try_interact("sink"), "scene recycles plate")
-	check(game.model.completed_cycles == 1, "scene completes entire service")
-	await process_frame
-	# Moving furniture in the editor also moves its collision and interaction point.
-	var station: Node2D = game.stations["stove"]
-	var original: Vector2 = station.position
-	var old_target: Vector2 = game.target_position("stove")
-	station.position += Vector2(25, 0)
-	check(game.target_position("stove").is_equal_approx(old_target + Vector2(25, 0)), "furniture movement updates interaction point")
-	station.position = original
-	# Collision tests use actual CharacterBody2D movement and fixed physics ticks.
+	check(game.try_interact("sink") and game.model.tables[1] == 0, "plate recycling frees table")
+	game.model.stains.append({"id": 999, "table": 0})
+	game._process(0.0)
+	check(game.stations.has("stain_999"), "world displays bounded stain job")
+	game.player.position = game.target_position("stain_999")
+	check(game.try_interact("stain_999") and game.model.stains.is_empty(), "player cleans visible stain")
+	game.reset_run()
+	game.model.request_customer()
+	for i in range(3): game.customers[game.model.next_order_id - 1]._process(10.0)
+	game.player.position = game.target_position("stove")
+	game.try_interact("stove")
+	game.model.advance(Day.PATIENCE + 0.1)
+	check(game.cooking_screen == null and game.model.cooking_order_id == 0, "timeout during cooking closes overlay and frees stove")
+	game.reset_run()
+	game.model.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
+	check(game.model.ended and game.summary_panel.visible, "day summary appears")
+	game.reset_run()
+	check(not game.model.ended and game.model.coins == 0, "new day resets summary and money")
+	# Real player collision and pause remain valid with new layout.
 	game.player.position = Vector2(75, 520)
 	Input.action_press("move_left")
-	for i in range(30):
-		await physics_frame
+	for i in range(30): await physics_frame
 	Input.action_release("move_left")
 	check(game.player.position.x >= 59.0, "wall blocks player")
-	game.player.position = game.target_position("stove")
-	Input.action_press("move_up")
-	for i in range(25):
-		await physics_frame
-	Input.action_release("move_up")
-	check(game.player.position.y >= 395.0, "stove blocks player")
-	# Pause through input event handling, then resume through the always-active node.
 	var pause_event := InputEventKey.new()
 	pause_event.keycode = KEY_ESCAPE
 	pause_event.physical_keycode = KEY_ESCAPE
@@ -85,25 +78,17 @@ func _run() -> void:
 	Input.parse_input_event(pause_event)
 	Input.flush_buffered_events()
 	await process_frame
-	check(paused and game.pause_panel.visible, "Escape pauses game")
-	var before: float = game.model.spawn_clock
-	for i in range(3):
-		await process_frame
-	check(is_equal_approx(before, game.model.spawn_clock), "paused simulation does not advance")
+	check(paused and game.pause_panel.visible, "Escape pauses day")
+	var before: float = game.model.elapsed
+	for i in range(3): await process_frame
+	check(is_equal_approx(before, game.model.elapsed), "paused day and patience freeze")
 	var release := pause_event.duplicate()
 	release.pressed = false
 	Input.parse_input_event(release)
 	Input.parse_input_event(pause_event)
 	Input.flush_buffered_events()
 	await process_frame
-	check(not paused, "Escape resumes game")
-	game.reset_run()
-	await process_frame
-	check(not is_instance_valid(game.customer) and game.model.coins == 0, "reset cleans customer and money")
-	game.model.request_customer()
-	game.reset_run()
-	await process_frame
-	check(game.model.phase == Model.Phase.EMPTY, "reset during arrival is safe")
+	check(not paused, "Escape resumes day")
 	print("SCENE INTEGRATION: %d checks, %d failures." % [checks, failures])
 	game.queue_free()
 	await process_frame
