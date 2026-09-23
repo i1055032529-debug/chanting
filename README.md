@@ -94,11 +94,11 @@ godot --path . --script tests/capture_preview.gd
 
 ## 分支约定
 
-- `main`：初始 Godot 项目基线。
+- `main`：当前开发主分支，包含服务原型、图片素材和烹饪小游戏；后续默认直接提交到此分支。
 - `feature/stage-1-service-loop`：阶段一服务原型。
 - `feature/image-assets`：图片素材替换与场景拆分。
 - `feature/cooking-minigame`：独立烹饪小游戏。
-- 每个后续阶段从已验收的代码新建开发分支，完成验证后再合并。
+- 以上 `feature/` 分支保留为历史阶段记录；只有明确需要隔离开发时才新建分支。
 - `.godot/`、构建输出和测试临时结果不进入仓库；Godot 的 `.uid` 文件进入仓库。
 
 本次本地提交使用仓库级身份 `Codex <codex@localhost>`，未修改电脑的全局 Git 身份设置。可在后续提交前改为项目维护者的 Git 身份。
