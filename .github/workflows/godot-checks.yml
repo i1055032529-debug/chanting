@@ -1,0 +1,49 @@
+name: Godot checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  stage-one:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GODOT_VERSION: 4.7.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Chinese system font
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: Install official Godot binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          base="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable"
+          curl --fail --location --retry 3 "${base}/${archive}" -o "/tmp/${archive}"
+          curl --fail --location --retry 3 "${base}/SHA512-SUMS.txt" -o /tmp/SHA512-SUMS.txt
+          cd /tmp
+          grep " ${archive}$" SHA512-SUMS.txt | sha512sum --check --strict
+          unzip -q "${archive}" -d godot
+          chmod +x "godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          sudo mv "godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+      - name: Import project and run regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results
+          godot --headless --path . --editor --import --quit 2>&1 | tee test-results/import.log
+          godot --headless --path . --script tests/test_service_model.gd 2>&1 | tee test-results/model.log
+          godot --headless --path . --script tests/test_scene.gd 2>&1 | tee test-results/scene.log
+          if grep -E 'SCRIPT ERROR:|^ERROR:|FAIL:' test-results/*.log; then
+            exit 1
+          fi
+      - name: Keep test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-one-test-logs
+          path: test-results/*.log
