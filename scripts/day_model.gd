@@ -18,6 +18,8 @@ const PASS_CAPACITY := 2
 const EXPENSE_KINDS := ["purchase", "wages", "furniture", "equipment", "expansion"]
 const STARTING_CASH := 30
 const DAILY_WAGE := 18
+const MAX_EMPLOYEES := 3
+const WORKER_IDS := ["employee", "employee_2", "employee_3"]
 const INGREDIENTS := {
 	"rice": {"name": "米饭", "price": 2, "starting": 8},
 	"egg": {"name": "鸡蛋", "price": 3, "starting": 8},
@@ -55,6 +57,8 @@ var ended := false
 var coins := STARTING_CASH
 var employee_hired := false
 var employee_attending := false
+var employee_hired_count := 0
+var employee_attending_count := 0
 var wage_reserved := 0
 var inventory: Dictionary = {}
 var reserved_inventory: Dictionary = {}
@@ -96,6 +100,7 @@ var cook_stations: Dictionary = {}
 var employee_carrying: Carry = Carry.NONE
 var employee_carried_order_id := 0
 var employee_carried_table_id := -1
+var worker_carry: Dictionary = {}
 
 
 func _init() -> void:
@@ -121,15 +126,58 @@ func spendable_cash() -> int:
 
 func set_employee_hired(hired: bool) -> bool:
 	if phase != "preopen" or employee_hired == hired: return false
-	employee_hired = hired
+	if hired: return hire_employee()
+	employee_hired_count = 0
+	_update_staff_counts()
 	_refresh_wage_reservation()
-	feedback.emit("已雇佣员工，预留今日工资 %d 金币。" % wage_reserved if hired and wage_reserved > 0 else "已雇佣员工，但资金不足，今天无法出勤。" if hired else "已停止雇佣员工，工资预留已释放。")
 	changed.emit()
 	return true
 
 
+func hire_employee() -> bool:
+	if phase != "preopen" or employee_hired_count >= MAX_EMPLOYEES: return false
+	employee_hired_count += 1
+	_update_staff_counts()
+	_refresh_wage_reservation()
+	feedback.emit("已雇佣 %d 名员工；今日预计 %d 人出勤，预留工资 %d。" % [employee_hired_count, wage_reserved / DAILY_WAGE, wage_reserved])
+	changed.emit()
+	return true
+
+
+func dismiss_employee() -> bool:
+	if phase != "preopen" or employee_hired_count <= 0: return false
+	employee_hired_count -= 1
+	_update_staff_counts()
+	_refresh_wage_reservation()
+	feedback.emit("现有 %d 名员工；工资预留已重算为 %d。" % [employee_hired_count, wage_reserved])
+	changed.emit()
+	return true
+
+
+func _update_staff_counts() -> void:
+	employee_hired = employee_hired_count > 0
+	employee_attending = employee_attending_count > 0
+
+
 func _refresh_wage_reservation() -> void:
-	wage_reserved = DAILY_WAGE if phase == "preopen" and employee_hired and coins >= DAILY_WAGE else 0
+	wage_reserved = mini(employee_hired_count, coins / DAILY_WAGE) * DAILY_WAGE if phase == "preopen" else 0
+
+
+func worker_active(actor: String) -> bool:
+	var index := WORKER_IDS.find(actor)
+	return index >= 0 and index < employee_attending_count
+
+
+func worker_carrying(actor: String) -> Carry:
+	return worker_carry.get(actor, {"kind": Carry.NONE}).kind
+
+
+func worker_carried_order(actor: String) -> int:
+	return worker_carry.get(actor, {"order": 0}).order
+
+
+func worker_carried_table(actor: String) -> int:
+	return worker_carry.get(actor, {"table": -1}).table
 
 
 func portions_available(recipe_id: String) -> int:
@@ -446,14 +494,14 @@ func task_available(kind: String, id: int, station: String = "") -> bool:
 
 func claim_task(kind: String, id: int, actor: String, station: String = "") -> bool:
 	if phase != "open": return false
-	if actor not in ["player", "employee"]: return false
-	if actor == "employee" and not employee_attending: return false
+	if actor != "player" and actor not in WORKER_IDS: return false
+	if actor != "player" and not worker_active(actor): return false
 	if actor == "player" and carrying != Carry.NONE: return false
-	if actor == "employee" and employee_carrying != Carry.NONE: return false
+	if actor != "player" and worker_carrying(actor) != Carry.NONE: return false
 	var key := task_key(kind, id)
 	var owner := task_owner(kind, id)
 	if owner != "":
-		if actor != "player" or owner != "employee" or task_active.get(key, false): return false
+		if actor != "player" or owner not in WORKER_IDS or task_active.get(key, false): return false
 		if kind == "cook":
 			if not orders.has(id) or orders[id].state != "waiting" or not orders[id].ingredients_reserved: return false
 			if station != "" and station != cook_stations.get(id, ""):
@@ -589,15 +637,15 @@ func interact(target: String) -> bool:
 
 
 func interact_as(actor: String, target: String, target_order_id: int = 0) -> bool:
-	if actor not in ["player", "employee"] or phase != "open" or ended: return false
-	if actor == "employee" and not employee_attending: return false
+	if (actor != "player" and actor not in WORKER_IDS) or phase != "open" or ended: return false
+	if actor != "player" and not worker_active(actor): return false
 	if target in STOVES:
 		return start_cooking(target) if actor == "player" else false
-	var held: Carry = carrying if actor == "player" else employee_carrying
-	var held_id: int = carried_order_id if actor == "player" else employee_carried_order_id
+	var held: Carry = carrying if actor == "player" else worker_carrying(actor)
+	var held_id: int = carried_order_id if actor == "player" else worker_carried_order(actor)
 	if target == "pass":
 		if held == Carry.FOOD:
-			if actor == "employee": return false
+			if actor != "player": return false
 			if pass_order_ids.size() >= PASS_CAPACITY: return _reject("出餐台已放满食物。")
 			if not orders.has(held_id) or orders[held_id].state != "carried": return _reject("这份菜已失效。")
 			pass_order_ids.append(held_id)
@@ -622,7 +670,7 @@ func interact_as(actor: String, target: String, target_order_id: int = 0) -> boo
 		return true
 	if target == "sink":
 		if held != Carry.PLATE: return _reject("这里只回收用过的餐盘。")
-		var table_id: int = carried_table_id if actor == "player" else employee_carried_table_id
+		var table_id: int = carried_table_id if actor == "player" else worker_carried_table(actor)
 		var id: int = tables[table_id]
 		if id == 0 or not orders.has(id) or orders[id].state != "clearing" or task_owner("clear", id) != actor: return false
 		orders.erase(id)
@@ -676,30 +724,31 @@ func interact_as(actor: String, target: String, target_order_id: int = 0) -> boo
 	return _reject("这里暂时没有可完成的工作。")
 
 
-func discard_employee_food() -> bool:
-	if employee_carrying != Carry.FOOD: return false
-	if orders.has(employee_carried_order_id) and orders[employee_carried_order_id].state == "carried": return false
-	_set_actor_carry("employee", Carry.NONE, 0, -1)
+func discard_employee_food(actor: String = "employee") -> bool:
+	if worker_carrying(actor) != Carry.FOOD: return false
+	var carried_id := worker_carried_order(actor)
+	if orders.has(carried_id) and orders[carried_id].state == "carried": return false
+	_set_actor_carry(actor, Carry.NONE, 0, -1)
 	changed.emit()
 	return true
 
 
-func abort_employee_job(kind: String, id: int, reason: String) -> void:
+func abort_employee_job(kind: String, id: int, reason: String, actor: String = "employee") -> void:
 	# Recovery always releases the reservation and any object in the employee's hands.
 	if kind == "cook" and cook_stations.has(id) and orders.has(id) and orders[id].state == "cooking":
 		cancel_cooking(id, orders[id].cook_attempt)
-	elif kind == "serve" and employee_carrying == Carry.FOOD and employee_carried_order_id == id:
+	elif kind == "serve" and worker_carrying(actor) == Carry.FOOD and worker_carried_order(actor) == id:
 		if orders.has(id) and orders[id].state == "carried" and pass_order_ids.size() < PASS_CAPACITY:
 			orders[id].state = "ready"
 			pass_order_ids.append(id)
 			_sync_pass_primary()
 		elif orders.has(id) and orders[id].state == "carried":
 			_timeout(id)
-		_set_actor_carry("employee", Carry.NONE, 0, -1)
-	elif kind == "clear" and employee_carrying == Carry.PLATE and orders.has(id) and orders[id].state == "clearing":
+		_set_actor_carry(actor, Carry.NONE, 0, -1)
+	elif kind == "clear" and worker_carrying(actor) == Carry.PLATE and orders.has(id) and orders[id].state == "clearing":
 		orders[id].state = "dirty"
-		_set_actor_carry("employee", Carry.NONE, 0, -1)
-	release_task(kind, id, "employee")
+		_set_actor_carry(actor, Carry.NONE, 0, -1)
+	release_task(kind, id, actor)
 	feedback.emit("员工暂时无法完成%s：%s；任务已释放。" % [kind, reason])
 	changed.emit()
 
@@ -710,9 +759,11 @@ func _set_actor_carry(actor: String, kind: Carry, id: int, table_id: int) -> voi
 		carried_order_id = id
 		carried_table_id = table_id
 	else:
-		employee_carrying = kind
-		employee_carried_order_id = id
-		employee_carried_table_id = table_id
+		worker_carry[actor] = {"kind": kind, "order": id, "table": table_id}
+		if actor == "employee":
+			employee_carrying = kind
+			employee_carried_order_id = id
+			employee_carried_table_id = table_id
 
 
 func most_urgent_waiting() -> int:
@@ -747,9 +798,10 @@ func start_day() -> bool:
 	for recipe_id: String in RECIPE_IDS:
 		if menu_enabled[recipe_id] and portions_available(recipe_id) > 0: can_serve = true
 	if not can_serve: return _reject("没有可制作的在售菜品；请采购食材、调整菜单或领取应急补给。")
-	employee_attending = employee_hired and wage_reserved == DAILY_WAGE
+	employee_attending_count = wage_reserved / DAILY_WAGE
+	_update_staff_counts()
 	phase = "open"
-	feedback.emit("第 %d 天营业开始；工资不足，员工今日不出勤。" % day_number if employee_hired and not employee_attending else "第 %d 天营业开始。" % day_number)
+	feedback.emit("第 %d 天营业开始；%d/%d 名员工出勤。" % [day_number, employee_attending_count, employee_hired_count])
 	changed.emit()
 	return true
 
@@ -770,8 +822,9 @@ func next_day() -> bool:
 func new_game() -> void:
 	day_number = 1
 	coins = STARTING_CASH
-	employee_hired = false
-	employee_attending = false
+	employee_hired_count = 0
+	employee_attending_count = 0
+	_update_staff_counts()
 	wage_reserved = 0
 	day_opening_cash = STARTING_CASH
 	_reset_inventory()
@@ -818,7 +871,8 @@ func _clear_day() -> void:
 	ended = false
 	served = 0
 	lost = 0
-	employee_attending = false
+	employee_attending_count = 0
+	_update_staff_counts()
 	no_sale = 0
 	missing_first_choices.clear()
 	price_refusals = 0
@@ -846,6 +900,7 @@ func _clear_day() -> void:
 	employee_carrying = Carry.NONE
 	employee_carried_order_id = 0
 	employee_carried_table_id = -1
+	worker_carry.clear()
 	payments.clear()
 	reviews.clear()
 	wait_records.clear()
@@ -923,14 +978,16 @@ func _finish_if_clear() -> void:
 	if not day_closed or ended: return
 	for order in orders.values():
 		if order.state not in ["dirty", "clearing"]: return
-	if carrying != Carry.NONE or employee_carrying != Carry.NONE or not stains.is_empty() or not browsers.is_empty(): return
+	if carrying != Carry.NONE or not stains.is_empty() or not browsers.is_empty(): return
+	for actor: String in worker_carry:
+		if worker_carrying(actor) != Carry.NONE: return
 	_finish_day()
 
 
 func _finish_day() -> void:
 	if ended: return
-	if employee_attending:
-		_post_transaction("wages", -DAILY_WAGE, "wages:%d" % day_number)
+	if employee_attending_count > 0:
+		_post_transaction("wages", -DAILY_WAGE * employee_attending_count, "wages:%d" % day_number)
 	wage_reserved = 0
 	ended = true
 	phase = "summary"
@@ -944,6 +1001,7 @@ func _finish_day() -> void:
 	employee_carrying = Carry.NONE
 	employee_carried_order_id = 0
 	employee_carried_table_id = -1
+	worker_carry.clear()
 	var report := summary()
 	day_reports.append(report.duplicate(true))
 	day_finished.emit(report)

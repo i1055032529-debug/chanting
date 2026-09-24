@@ -1,5 +1,5 @@
 extends Node2D
-## One automatic worker. Claims before walking; model owns all task and item changes.
+## One worker instance; the model owns shared task reservations and per-worker carry state.
 
 const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
 const SPEED := 160.0
@@ -12,6 +12,8 @@ const WORK_LABELS := {"cook": "做菜", "serve": "上菜", "clear": "收盘", "c
 
 var model: RefCounted
 var stations: Dictionary = {}
+var actor_id := "employee"
+var home_position := HOME
 var enabled := true
 var work_enabled := {"serve": true, "clear": true, "clean": true, "cook": true}
 var priority: Array[String] = ["serve", "clear", "clean", "cook"]
@@ -30,21 +32,23 @@ var tasks_completed := {"serve": 0, "clear": 0, "clean": 0, "cook": 0}
 @onready var title_label: Label = $Title
 
 
-func configure(day_model: RefCounted, all_stations: Dictionary) -> void:
+func configure(day_model: RefCounted, all_stations: Dictionary, worker_id: String = "employee", home: Vector2 = HOME) -> void:
 	model = day_model
 	stations = all_stations
+	actor_id = worker_id
+	home_position = home
 
 
 func _ready() -> void:
-	avatar.sprite.modulate = Color("8cbad6")
-	title_label.text = "员工"
+	avatar.sprite.modulate = [Color("8cbad6"), Color("d6a48c"), Color("a8c890")][model.WORKER_IDS.find(actor_id)]
+	title_label.text = "员工 %d" % (model.WORKER_IDS.find(actor_id) + 1)
 
 
 func _physics_process(delta: float) -> void:
-	if model == null or model.phase != "open" or model.ended or not model.employee_attending: return
+	if model == null or model.phase != "open" or model.ended or not model.worker_active(actor_id): return
 	clock += delta
 	if grid == null: _build_grid()
-	if model.employee_carrying == model.Carry.FOOD and (not model.orders.has(model.employee_carried_order_id) or model.orders[model.employee_carried_order_id].state != "carried"):
+	if model.worker_carrying(actor_id) == model.Carry.FOOD and (not model.orders.has(model.worker_carried_order(actor_id)) or model.orders[model.worker_carried_order(actor_id)].state != "carried"):
 		_begin_discard()
 	if not job.is_empty() and stage != "discard" and not _job_valid():
 		_finish_invalid()
@@ -56,9 +60,9 @@ func _physics_process(delta: float) -> void:
 		else: _move(delta)
 	else:
 		_move_home(delta)
-	avatar.update_pose(_direction(), not route.is_empty() and route_index < route.size(), model.employee_carrying)
-	if model.employee_carrying == model.Carry.FOOD and model.orders.has(model.employee_carried_order_id):
-		avatar.held.modulate = model.RECIPES[model.orders[model.employee_carried_order_id].recipe].color
+	avatar.update_pose(_direction(), not route.is_empty() and route_index < route.size(), model.worker_carrying(actor_id))
+	if model.worker_carrying(actor_id) == model.Carry.FOOD and model.orders.has(model.worker_carried_order(actor_id)):
+		avatar.held.modulate = model.RECIPES[model.orders[model.worker_carried_order(actor_id)].recipe].color
 	else: avatar.held.modulate = Color.WHITE
 
 
@@ -82,7 +86,7 @@ func _choose_job() -> void:
 		if not is_equal_approx(a.urgency, b.urgency): return a.urgency > b.urgency
 		return a.distance < b.distance)
 	for candidate in choices:
-		if not model.claim_task(candidate.kind, candidate.id, "employee", candidate.get("station", "")): continue
+		if not model.claim_task(candidate.kind, candidate.id, actor_id, candidate.get("station", "")): continue
 		job = candidate
 		stage = "moving"
 		status = "%s · %02d 号桌" % [WORK_LABELS[job.kind], job.table + 1]
@@ -102,7 +106,7 @@ func _first_target(task: Dictionary) -> String:
 
 func _job_valid() -> bool:
 	if job.is_empty() or job.kind == "discard": return true
-	if model.task_owner(job.kind, job.id) != "employee": return false
+	if model.task_owner(job.kind, job.id) != actor_id: return false
 	if job.kind == "clean":
 		for stain in model.stains:
 			if stain.id == job.id: return true
@@ -134,14 +138,14 @@ func _arrived() -> void:
 	var kind: String = job.kind
 	var id: int = job.id
 	if stage == "discard":
-		model.discard_employee_food()
+		model.discard_employee_food(actor_id)
 		job.clear()
 		stage = "idle"
 		status = "失效菜品已回收"
 		return
 	match kind:
 		"cook":
-			if not model.start_cooking_as(id, "employee"):
+			if not model.start_cooking_as(id, actor_id):
 				_finish_invalid()
 				return
 			cook_rules = CookingRules.new()
@@ -152,26 +156,26 @@ func _arrived() -> void:
 			status = "正在制作%s" % model.recipe_name(cook_rules.recipe_id)
 		"serve":
 			if stage == "moving":
-				if not model.interact_as("employee", "pass", id):
+				if not model.interact_as(actor_id, "pass", id):
 					_finish_invalid()
 					return
 				stage = "delivering"
 				if not _route_to(stations["table_%d" % (job.table + 1)].interaction_position()): _failed_path()
 			else:
-				if model.interact_as("employee", "table_%d" % (job.table + 1)): _finish_job()
+				if model.interact_as(actor_id, "table_%d" % (job.table + 1)): _finish_job()
 				else: _finish_invalid()
 		"clear":
 			if stage == "moving":
-				if not model.interact_as("employee", "table_%d" % (job.table + 1)):
+				if not model.interact_as(actor_id, "table_%d" % (job.table + 1)):
 					_finish_invalid()
 					return
 				stage = "returning"
 				if not _route_to(stations.sink.interaction_position()): _failed_path()
 			else:
-				if model.interact_as("employee", "sink"): _finish_job()
+				if model.interact_as(actor_id, "sink"): _finish_job()
 				else: _finish_invalid()
 		"clean":
-			if model.interact_as("employee", "stain_%d" % id): _finish_job()
+			if model.interact_as(actor_id, "stain_%d" % id): _finish_job()
 			else: _finish_invalid()
 
 
@@ -205,9 +209,9 @@ func _finish_job() -> void:
 
 
 func _finish_invalid() -> void:
-	var transferred: bool = not job.is_empty() and job.kind != "discard" and model.task_owner(job.kind, job.id) != "employee"
+	var transferred: bool = not job.is_empty() and job.kind != "discard" and model.task_owner(job.kind, job.id) != actor_id
 	if not job.is_empty() and job.kind != "discard":
-		if not transferred: model.abort_employee_job(job.kind, job.id, "订单已失效")
+		if not transferred: model.abort_employee_job(job.kind, job.id, "订单已失效", actor_id)
 	job.clear()
 	stage = "idle"
 	route = PackedVector2Array()
@@ -217,12 +221,12 @@ func _finish_invalid() -> void:
 
 func _begin_discard() -> void:
 	if stage == "discard": return
-	if not job.is_empty() and job.kind != "discard": model.release_task(job.kind, job.id, "employee")
+	if not job.is_empty() and job.kind != "discard": model.release_task(job.kind, job.id, actor_id)
 	job = {"kind": "discard", "id": 0, "table": -1}
 	stage = "discard"
 	status = "回收失效菜品"
 	if not _route_to(stations.sink.interaction_position()):
-		model.discard_employee_food()
+		model.discard_employee_food(actor_id)
 		job.clear()
 		stage = "idle"
 		failure_reason = "回收台不可达，菜品已安全移除"
@@ -234,7 +238,7 @@ func _failed_path() -> void:
 	var key: String = model.task_key(job.kind, job.id)
 	failed_until[key] = clock + 6.0
 	failure_reason = "%s路径不可达" % WORK_LABELS.get(job.kind, "任务")
-	model.abort_employee_job(job.kind, job.id, failure_reason)
+	model.abort_employee_job(job.kind, job.id, failure_reason, actor_id)
 	job.clear()
 	stage = "idle"
 	status = failure_reason
@@ -244,9 +248,9 @@ func _failed_path() -> void:
 
 func _move_home(delta: float) -> void:
 	# Idle spot stays out of the player's workstation approach points.
-	if position.distance_to(HOME) > 8.0:
+	if position.distance_to(home_position) > 8.0:
 		if route.is_empty():
-			if not _route_to(HOME): return
+			if not _route_to(home_position): return
 		_move(delta)
 
 
@@ -260,7 +264,7 @@ func reset_day() -> void:
 	route_index = 0
 	failed_until.clear()
 	tasks_completed = {"serve": 0, "clear": 0, "clean": 0, "cook": 0}
-	position = HOME
+	position = home_position
 
 
 func reset_new_game() -> void:

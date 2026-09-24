@@ -23,9 +23,9 @@ Godot 像素风餐厅经营游戏。已实现四桌营业、四道菜、独立�
 
 ## 员工协作
 
-新游戏开局尚未雇佣员工。开店前按 M 打开人员安排，可雇佣或停止雇佣一名员工，日薪 18 金币。雇佣后先预留当天工资，采购只能花剩余金额；打烊时支付一次。资金不足的营业日员工不出勤，主角仍可独自工作。店内有两个可独立使用的烹饪台，主角与出勤员工可以同时做菜。员工出发前会预留任务；在员工到达并开始执行前，主角可直接接手。员工已开始做菜、拿起菜品或收走餐盘后，任务由员工完成。员工之间仍不能重复领取同一任务。顶部显示员工当前工作和失败原因。按 M 打开管理面板，关闭某项工作或调整优先级；设置在下一营业日继续生效。禁用整名员工后，主角仍可独立完成营业日。
+新游戏开局尚未雇佣员工。开店前按 M 打开人员安排，最多可雇佣 3 名员工，每人日薪 18 金币。雇佣后按可负担人数预留当天工资，采购只能花剩余金额；打烊时按实际出勤人数支付一次。资金不足时，部分员工不出勤，主角仍可独自工作。管理面板可切换员工，分别安排工作与优先级。店内有两个可独立使用的烹饪台，主角与出勤员工可以同时做菜，其他员工也可并行上菜、收盘和清洁。员工出发前会预留任务；在员工到达并开始执行前，主角可直接接手。员工已开始做菜、拿起菜品或收走餐盘后，任务由员工完成。员工之间不能重复领取同一任务，每个人独立携带菜品或餐盘。顶部显示员工当前工作和失败原因。按 M 打开管理面板，关闭某项工作或调整优先级；设置在下一营业日继续生效。禁用整名员工后，主角仍可独立完成营业日。
 
-![雇佣与员工安排界面](docs/stage-4-3-hire.webp)
+![多员工雇佣与安排界面](docs/multi-employee-management.webp)
 
 ## 营业规则
 
@@ -50,7 +50,7 @@ Godot 像素风餐厅经营游戏。已实现四桌营业、四道菜、独立�
 - `scenes/furniture/`、`scenes/actors/`：可独立替换的家具和角色场景。
 - `scripts/service_model.gd`：保留阶段一单桌服务规则作为历史回归样本；当前游戏使用 `DayModel`。
 
-详见 [完整开发计划](docs/development-plan.md)、[阶段 4.3 实现说明](docs/stage-4-3.md)、[阶段 4.2 实现说明](docs/stage-4-2.md)、[阶段 4.1 实现说明](docs/stage-4-1.md)、[烹饪小游戏说明](docs/cooking-minigame.md) 与 [图片替换说明](docs/image-assets.md)。
+详见 [多员工并行经营说明](docs/multi-employee.md)、[完整开发计划](docs/development-plan.md)、[阶段 4.3 实现说明](docs/stage-4-3.md)、[阶段 4.2 实现说明](docs/stage-4-2.md)、[阶段 4.1 实现说明](docs/stage-4-1.md)、[烹饪小游戏说明](docs/cooking-minigame.md) 与 [图片替换说明](docs/image-assets.md)。
 
 ## 验证
 
@@ -69,9 +69,10 @@ godot --headless --path . --script tests/test_multi_day.gd
 godot --headless --path . --script tests/test_inventory.gd
 godot --headless --path . --script tests/test_customer_choice.gd
 godot --headless --path . --script tests/test_payroll.gd
+godot --headless --path . --script tests/test_multi_employee.gd
 ```
 
-macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。图形环境下运行 `godot --path . --script tests/capture_stage_4_3.gd` 可重新生成雇佣和工资日结画面。GitHub Actions 对 `main` 的推送自动运行十三组测试。
+macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。图形环境下运行 `godot --path . --script tests/capture_stage_4_3.gd` 可重新生成雇佣和工资日结画面。GitHub Actions 对 `main` 的推送自动运行十四组测试。
 
 ## 分支
 
