@@ -7,14 +7,13 @@ const ChairScene = preload("res://scenes/furniture/chair.tscn")
 const CookingScreen = preload("res://scenes/cooking/cooking_screen.tscn")
 const StainScript = preload("res://scripts/stain.gd")
 const EmployeeScene = preload("res://scenes/actors/employee.tscn")
+const Layout = preload("res://scripts/layout_rules.gd")
 const INTERACT_DISTANCE := 55.0
 const CREAM := Color("f4e5cd")
 const MUTED := Color("bea993")
 const GOLD := Color("edbc72")
 const RED := Color("e59172")
 const GREEN := Color("91bf8b")
-const TABLE_POSITIONS := [Vector2(530, 460), Vector2(900, 460), Vector2(530, 575), Vector2(900, 575)]
-const STAIN_POSITIONS := [Vector2(455, 532), Vector2(795, 532), Vector2(455, 630), Vector2(795, 630)]
 
 var model := Model.new()
 var player: CharacterBody2D
@@ -24,6 +23,9 @@ var selected_employee_index := 0
 var actors: Node2D
 var customers: Dictionary = {}
 var stations: Dictionary = {}
+var table_nodes: Array[Node2D] = []
+var chair_nodes: Array[Node2D] = []
+var order_card_panels: Array[Panel] = []
 var stain_nodes: Dictionary = {}
 var font: SystemFont
 var ui: Control
@@ -39,6 +41,14 @@ var purchase_quantities := {"rice": 1, "egg": 1, "noodles": 1, "tomato": 1}
 var summary_panel: Panel
 var summary_text: Label
 var management_panel: Panel
+var layout_panel: Panel
+var layout_labels: Dictionary = {}
+var layout_selected := 0
+var layout_editing := false
+var layout_new_table := false
+var layout_preview_position := Vector2.ZERO
+var layout_preview_table: Node2D
+var layout_preview_chair: Node2D
 var hire_button: Button
 var dismiss_button: Button
 var select_previous_button: Button
@@ -103,7 +113,7 @@ func _process(delta: float) -> void:
 			var food_id: int = model.pass_order_ids[i]
 			meal.modulate = Model.RECIPES[model.orders[food_id].recipe].color if model.orders.has(food_id) else Color.WHITE
 	stations.pass.caption.text = "出餐台 %d/%d" % [model.pass_order_ids.size(), Model.PASS_CAPACITY]
-	for i in range(Model.TABLE_COUNT):
+	for i in range(model.table_count()):
 		var table = stations["table_%d" % (i + 1)]
 		var order_id: int = model.tables[i]
 		var order: Dictionary = model.orders.get(order_id, {})
@@ -111,7 +121,7 @@ func _process(delta: float) -> void:
 		table.item.modulate = Model.RECIPES[order.recipe].color if order.has("recipe") and order.state == "eating" else Color.WHITE
 	if is_instance_valid(cooking_screen):
 		var lines: Array[String] = []
-		for i in range(Model.TABLE_COUNT):
+		for i in range(model.table_count()):
 			var id: int = model.tables[i]
 			if id == 0 or not model.orders.has(id):
 				lines.append("%02d 桌 · 空闲" % (i + 1))
@@ -127,6 +137,12 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_instance_valid(cooking_screen) or model.phase == "summary": return
+	if model.phase == "preopen" and layout_editing and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if event.position.x > 320.0 and event.position.y > 300.0 and event.position.y < 670.0:
+			layout_preview_position = Vector2(roundi(event.position.x / 10.0) * 10, roundi(event.position.y / 10.0) * 10)
+			_refresh_layout_preview()
+			get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("interact") and not event.is_echo() and model.phase == "open":
 		try_interact(closest_target())
 		get_viewport().set_input_as_handled()
@@ -176,8 +192,10 @@ func try_interact(id: String) -> bool:
 
 
 func reset_run() -> void:
+	_cancel_layout_preview()
 	_clear_scene_day()
 	model.new_game()
+	_sync_layout_nodes()
 	for worker in employees: worker.reset_new_game()
 	selected_employee_index = 0
 	preopen_panel.show()
@@ -199,10 +217,12 @@ func prepare_next_day() -> bool:
 
 
 func start_day() -> bool:
+	if layout_editing: return false
 	if not model.start_day(): return false
 	preopen_panel.hide()
 	store_panel.hide()
 	management_panel.hide()
+	layout_panel.hide()
 	_refresh_employee_presence()
 	player.locked = false
 	_refresh_ui()
@@ -242,20 +262,9 @@ func _build_room() -> void:
 	player = $World/Player
 	var first_table = $World/Table
 	var first_chair = $World/Chair
-	first_table.position = TABLE_POSITIONS[0]
-	first_chair.position = TABLE_POSITIONS[0] + Vector2(100, 0)
-	for i in range(Model.TABLE_COUNT):
-		var table = first_table if i == 0 else TableScene.instantiate()
-		var chair = first_chair if i == 0 else ChairScene.instantiate()
-		if i > 0:
-			table.position = TABLE_POSITIONS[i]
-			chair.position = TABLE_POSITIONS[i] + Vector2(100, 0)
-			actors.add_child(table)
-			actors.add_child(chair)
-		table.station_id = "table_%d" % (i + 1)
-		table.display_name = "%02d 号桌" % (i + 1)
-		table.get_node("Caption").text = table.display_name
-		stations[table.station_id] = table
+	table_nodes.append(first_table)
+	chair_nodes.append(first_chair)
+	_sync_layout_nodes()
 	for id: String in ["stove", "pass", "sink"]:
 		stations[id] = actors.get_node(id.capitalize())
 	stations["stove_2"] = actors.get_node("Stove2")
@@ -269,10 +278,54 @@ func _build_room() -> void:
 	employee = employees[0]
 
 
+func _sync_layout_nodes() -> void:
+	while table_nodes.size() > model.table_count():
+		var old_index := table_nodes.size() - 1
+		stations.erase("table_%d" % (old_index + 1))
+		table_nodes.pop_back().queue_free()
+		chair_nodes.pop_back().queue_free()
+	while table_nodes.size() < model.table_count():
+		var table = TableScene.instantiate()
+		var chair = ChairScene.instantiate()
+		actors.add_child(table)
+		actors.add_child(chair)
+		table_nodes.append(table)
+		chair_nodes.append(chair)
+	for i in range(model.table_count()):
+		var table = table_nodes[i]
+		var chair = chair_nodes[i]
+		table.position = model.table_positions[i]
+		chair.position = model.table_positions[i] + Vector2(100, 0)
+		table.station_id = "table_%d" % (i + 1)
+		table.display_name = "%02d 号桌" % (i + 1)
+		table.get_node("Caption").text = table.display_name
+		table.visible = true
+		chair.visible = true
+		stations[table.station_id] = table
+	_layout_order_cards()
+	for worker in employees: worker.grid = null
+
+
+func _layout_order_cards() -> void:
+	if order_card_panels.is_empty(): return
+	var count := model.table_count()
+	var stride := 250 if count > 4 else 312
+	var width := 242 if count > 4 else 296
+	for i in range(order_card_panels.size()):
+		var visible_card := i < count
+		order_card_panels[i].visible = visible_card
+		order_cards[i].visible = visible_card
+		if visible_card:
+			order_card_panels[i].position.x = 26 + i * stride
+			order_card_panels[i].size.x = width
+			order_cards[i].position.x = order_card_panels[i].position.x + 13
+			order_cards[i].size.x = width - 24
+
+
 func _spawn_customer(id: int, table_id: int) -> void:
 	var customer = Customer.instantiate()
 	var seat: Vector2 = stations["table_%d" % (table_id + 1)].get_node("Seat").global_position
-	var route: Array[Vector2] = [Vector2(440, 420), Vector2(seat.x, 420)]
+	var route: Array[Vector2] = Layout.customer_route(model.table_positions, seat + Vector2(0, 30))
 	customer.configure($Entrance.global_position, route, seat)
 	customer.seated.connect(func(): model.seat_customer(id))
 	customer.departed.connect(func():
@@ -305,7 +358,8 @@ func _sync_stains() -> void:
 		if not stain_nodes.has(key):
 			var stain = StainScript.new()
 			stain.station_id = key
-			stain.position = STAIN_POSITIONS[stain_data.table] + Vector2((stain_data.id % 2) * 14, 0)
+			var table_position: Vector2 = model.table_positions[stain_data.table]
+			stain.position = table_position + Vector2(-75 + (stain_data.id % 2) * 14, 55 if table_position.y > 510 else 72)
 			actors.add_child(stain)
 			stain_nodes[key] = stain
 			stations[key] = stain
@@ -328,7 +382,7 @@ func _open_cooking(id: int, attempt: int, recipe_id: String) -> void:
 	cooking_screen.order_id = id
 	cooking_screen.recipe_id = recipe_id
 	cooking_screen.recipe_name = model.recipe_name(recipe_id)
-	cooking_screen.recipe_speed = Model.RECIPES[recipe_id].speed
+	cooking_screen.recipe_speed = Model.RECIPES[recipe_id].speed * model.cooking_speed_multiplier()
 	cooking_screen.completed.connect(func(result: Dictionary):
 		if not model.complete_cooking(id, attempt, result): model.cancel_cooking(id, attempt)
 		_close_cooking())
@@ -381,12 +435,13 @@ func _build_ui() -> void:
 	_label("employee", "员工：待命", Vector2(29, 58), Vector2(415, 25), 14, GREEN)
 	_label("capacity", "", Vector2(452, 58), Vector2(575, 25), 14, CREAM)
 	_button(ui, "M · 员工管理", Rect2(1044, 56, 208, 26), _toggle_management)
-	for i in range(Model.TABLE_COUNT):
+	for i in range(Model.TABLE_COUNT + 1):
 		var x := 26 + i * 312
-		_panel(Rect2(x, 86, 296, 66), Color("493321"))
+		order_card_panels.append(_panel(Rect2(x, 86, 296, 66), Color("493321")))
 		var card := _label("card%d" % i, "%02d 号桌  ·  空闲" % (i + 1), Vector2(x + 13, 92), Vector2(272, 57), 16, CREAM)
 		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		order_cards.append(card)
+	_layout_order_cards()
 	_panel(Rect2(0, 701, 1280, 99), Color("2d2119"))
 	_label("toast", toast, Vector2(32, 710), Vector2(1210, 28), 16, CREAM)
 	prompt = _label("prompt", "", Vector2(32, 750), Vector2(810, 26), 15, GOLD)
@@ -420,10 +475,12 @@ func _build_ui() -> void:
 	_child_label(preopen_panel, "开店准备", Vector2(34, 24), Vector2(550, 48), 30, GOLD)
 	preopen_text = _child_label(preopen_panel, "", Vector2(34, 86), Vector2(560, 120), 19, CREAM)
 	_button(preopen_panel, "开始营业", Rect2(34, 220, 562, 48), start_day)
-	_button(preopen_panel, "采购与菜单", Rect2(34, 286, 177, 38), _toggle_store)
-	_button(preopen_panel, "员工安排 · M", Rect2(226, 286, 177, 38), _toggle_management)
-	_button(preopen_panel, "开始新游戏", Rect2(418, 286, 178, 38), _open_reset)
+	_button(preopen_panel, "采购菜单", Rect2(34, 286, 130, 38), _toggle_store)
+	_button(preopen_panel, "员工安排", Rect2(178, 286, 130, 38), _toggle_management)
+	_button(preopen_panel, "家具设备", Rect2(322, 286, 130, 38), _toggle_layout)
+	_button(preopen_panel, "新游戏", Rect2(466, 286, 130, 38), _open_reset)
 	_build_store_panel()
+	_build_layout_panel()
 	pause_panel = _panel(Rect2(425, 270, 430, 260), Color("38291f"))
 	pause_panel.visible = false
 	pause_panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -462,6 +519,7 @@ func _build_ui() -> void:
 	pause_panel.reparent(modal_root)
 	preopen_panel.reparent(modal_root)
 	store_panel.reparent(modal_root)
+	layout_panel.reparent(modal_root)
 	summary_panel.reparent(modal_root)
 	reset_dialog.reparent(modal_root)
 
@@ -494,6 +552,143 @@ func _build_store_panel() -> void:
 		store_labels["toggle_" + recipe_id] = _make_button(store_panel, "", Rect2(710, y + 9, 145, 32), func(): _toggle_recipe(recipe_id))
 	store_labels["emergency"] = _make_button(store_panel, "应急补给 · 1 份蛋饭食材", Rect2(30, 583, 400, 34), _claim_emergency)
 	_button(store_panel, "返回开店准备", Rect2(596, 583, 259, 34), _toggle_store)
+
+
+func _build_layout_panel() -> void:
+	layout_panel = _panel(Rect2(20, 170, 300, 490), Color("30291f"))
+	layout_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	layout_panel.hide()
+	_child_label(layout_panel, "家具与设备", Vector2(18, 14), Vector2(265, 40), 25, GOLD)
+	layout_labels["balance"] = _child_label(layout_panel, "", Vector2(18, 60), Vector2(265, 28), 15, CREAM)
+	layout_labels["selected"] = _child_label(layout_panel, "", Vector2(70, 101), Vector2(155, 30), 18, CREAM)
+	layout_labels["previous"] = _make_button(layout_panel, "←", Rect2(18, 98, 42, 32), func(): _select_layout_table(-1))
+	layout_labels["next"] = _make_button(layout_panel, "→", Rect2(235, 98, 42, 32), func(): _select_layout_table(1))
+	layout_labels["move"] = _make_button(layout_panel, "移动选中餐桌", Rect2(18, 141, 259, 35), func(): _begin_layout_preview(false))
+	layout_labels["buy"] = _make_button(layout_panel, "", Rect2(18, 184, 259, 35), func(): _begin_layout_preview(true))
+	layout_labels["upgrade"] = _make_button(layout_panel, "", Rect2(18, 227, 259, 35), _upgrade_equipment)
+	layout_labels["instructions"] = _child_label(layout_panel, "点击地面或用方向按钮预览位置。\n绿色可放，红色不可放；确认前不扣款。", Vector2(18, 272), Vector2(265, 58), 14, MUTED)
+	layout_labels["left"] = _make_button(layout_panel, "←", Rect2(18, 333, 55, 32), func(): _move_layout_preview(Vector2(-20, 0)))
+	layout_labels["right"] = _make_button(layout_panel, "→", Rect2(82, 333, 55, 32), func(): _move_layout_preview(Vector2(20, 0)))
+	layout_labels["up"] = _make_button(layout_panel, "↑", Rect2(146, 333, 55, 32), func(): _move_layout_preview(Vector2(0, -20)))
+	layout_labels["down"] = _make_button(layout_panel, "↓", Rect2(210, 333, 67, 32), func(): _move_layout_preview(Vector2(0, 20)))
+	layout_labels["valid"] = _child_label(layout_panel, "", Vector2(18, 371), Vector2(265, 24), 14, CREAM)
+	layout_labels["confirm"] = _make_button(layout_panel, "确认位置", Rect2(18, 402, 124, 35), _confirm_layout_preview)
+	layout_labels["cancel"] = _make_button(layout_panel, "取消布置", Rect2(153, 402, 124, 35), _cancel_layout_preview)
+	_make_button(layout_panel, "返回开店准备", Rect2(18, 446, 259, 32), _toggle_layout)
+	_refresh_layout_panel()
+
+
+func _toggle_layout() -> void:
+	if model.phase != "preopen": return
+	if layout_panel.visible:
+		_cancel_layout_preview()
+		layout_panel.hide()
+		preopen_panel.show()
+	else:
+		store_panel.hide()
+		management_panel.hide()
+		preopen_panel.hide()
+		layout_panel.show()
+	_refresh_layout_panel()
+
+
+func _select_layout_table(delta: int) -> void:
+	if layout_editing: return
+	layout_selected = clampi(layout_selected + delta, 0, model.table_count() - 1)
+	_refresh_layout_panel()
+
+
+func _begin_layout_preview(new_table: bool) -> void:
+	if model.phase != "preopen" or layout_editing or (new_table and model.table_count() >= Model.TABLE_COUNT + 1): return
+	layout_new_table = new_table
+	layout_editing = true
+	layout_preview_position = Model.FIFTH_TABLE_POSITION if new_table else model.table_positions[layout_selected]
+	if not new_table:
+		table_nodes[layout_selected].visible = false
+		chair_nodes[layout_selected].visible = false
+	layout_preview_table = TableScene.instantiate()
+	layout_preview_chair = ChairScene.instantiate()
+	actors.add_child(layout_preview_table)
+	actors.add_child(layout_preview_chair)
+	layout_preview_table.collision_layer = 0
+	layout_preview_chair.collision_layer = 0
+	layout_preview_table.get_node("CollisionShape2D").disabled = true
+	layout_preview_chair.get_node("CollisionShape2D").disabled = true
+	layout_preview_table.get_node("Caption").text = "新餐桌" if new_table else "%02d 号桌" % (layout_selected + 1)
+	_refresh_layout_preview()
+
+
+func _move_layout_preview(offset: Vector2) -> void:
+	if not layout_editing: return
+	layout_preview_position += offset
+	_refresh_layout_preview()
+
+
+func _preview_layout_valid() -> bool:
+	var positions := model.table_positions.duplicate()
+	if layout_new_table: positions.append(layout_preview_position)
+	else: positions[layout_selected] = layout_preview_position
+	return Layout.valid(positions)
+
+
+func _refresh_layout_preview() -> void:
+	if not layout_editing: return
+	layout_preview_table.position = layout_preview_position
+	layout_preview_chair.position = layout_preview_position + Vector2(100, 0)
+	var tint := Color(0.65, 1.0, 0.65, 0.7) if _preview_layout_valid() else Color(1.0, 0.5, 0.45, 0.7)
+	layout_preview_table.modulate = tint
+	layout_preview_chair.modulate = tint
+	_refresh_layout_panel()
+
+
+func _confirm_layout_preview() -> void:
+	if not layout_editing or not _preview_layout_valid(): return
+	if not layout_new_table and model.table_positions[layout_selected] == layout_preview_position:
+		_cancel_layout_preview()
+		return
+	var success: bool = model.buy_table(layout_preview_position) if layout_new_table else model.move_table(layout_selected, layout_preview_position)
+	if not success: return
+	_cancel_layout_preview()
+	_sync_layout_nodes()
+	layout_selected = model.table_count() - 1 if model.table_count() > Model.TABLE_COUNT else layout_selected
+	_refresh_ui()
+	_refresh_layout_panel()
+
+
+func _cancel_layout_preview() -> void:
+	if not layout_editing: return
+	if not layout_new_table:
+		table_nodes[layout_selected].visible = true
+		chair_nodes[layout_selected].visible = true
+	layout_preview_table.queue_free()
+	layout_preview_chair.queue_free()
+	layout_preview_table = null
+	layout_preview_chair = null
+	layout_editing = false
+	_refresh_layout_panel()
+
+
+func _upgrade_equipment() -> void:
+	model.upgrade_equipment()
+	_refresh_layout_panel()
+
+
+func _refresh_layout_panel() -> void:
+	if layout_panel == null: return
+	layout_selected = mini(layout_selected, model.table_count() - 1)
+	layout_labels.balance.text = "现金 %d · 可用 %d" % [model.coins, model.spendable_cash()]
+	layout_labels.selected.text = "%d / %d 号桌" % [layout_selected + 1, model.table_count()]
+	layout_labels.previous.disabled = layout_editing or layout_selected == 0
+	layout_labels.next.disabled = layout_editing or layout_selected >= model.table_count() - 1
+	layout_labels.move.disabled = layout_editing
+	layout_labels.buy.text = "购买第 5 张桌 · %d 金币" % Model.TABLE_PRICE if model.table_count() <= Model.TABLE_COUNT else "餐桌已购齐"
+	layout_labels.buy.disabled = layout_editing or model.table_count() > Model.TABLE_COUNT or model.spendable_cash() < Model.TABLE_PRICE
+	layout_labels.upgrade.text = "烹饪加速 25%% · %d 金币" % Model.EQUIPMENT_PRICE if model.equipment_level == 0 else "设备已升级 · 制作提速 25%"
+	layout_labels.upgrade.disabled = layout_editing or model.equipment_level > 0 or model.spendable_cash() < Model.EQUIPMENT_PRICE
+	for key in ["left", "right", "up", "down", "cancel"]: layout_labels[key].disabled = not layout_editing
+	layout_labels.confirm.disabled = not layout_editing or not _preview_layout_valid() or (layout_new_table and model.spendable_cash() < Model.TABLE_PRICE)
+	layout_labels.valid.text = ("位置可用" if _preview_layout_valid() else "位置不可用：碰撞、越界或堵住通路") if layout_editing else ""
+	layout_labels.valid.add_theme_color_override("font_color", GREEN if layout_editing and _preview_layout_valid() else RED)
 
 
 func _adjust_purchase(ingredient: String, amount: int) -> void:
@@ -565,7 +760,7 @@ func _refresh_ui() -> void:
 	elif model.phase == "summary": labels.time.text = "今日结算"
 	else: labels.time.text = ("收尾 %02d:%02d" % [maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) / 60, maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) % 60]) if model.day_closed else ("营业 %02d:%02d" % [remaining / 60, remaining % 60])
 	if preopen_text != null:
-		preopen_text.text = "第 %d 天 · 现金 %d · 工资预留 %d · 可用 %d\n已雇佣 %d 人，预计 %d 人出勤。\n\n开店前采购、调整菜单和雇佣；准备好后开始营业。" % [model.day_number, model.coins, model.wage_reserved, model.spendable_cash(), model.employee_hired_count, model.wage_reserved / Model.DAILY_WAGE]
+		preopen_text.text = "第 %d 天 · 现金 %d · 工资预留 %d · 可用 %d\n已雇佣 %d 人，预计 %d 人出勤。\n\n开店前可采购、布置家具、升级设备和安排员工。" % [model.day_number, model.coins, model.wage_reserved, model.spendable_cash(), model.employee_hired_count, model.wage_reserved / Model.DAILY_WAGE]
 	labels.clean.text = "整洁 %d%%" % [roundi((1.0 - float(model.stains.size()) / Model.STAIN_LIMIT) * 100)]
 	labels.clean.add_theme_color_override("font_color", GREEN if model.stains.size() <= 1 else RED)
 	if model.phase == "preopen":
@@ -583,7 +778,7 @@ func _refresh_ui() -> void:
 	for recipe_id: String in Model.RECIPE_IDS:
 		portions.append("%s %d" % [model.recipe_name(recipe_id), model.portions_available(recipe_id)])
 	labels.capacity.text = "剩余可做：" + " · ".join(portions)
-	for i in range(Model.TABLE_COUNT):
+	for i in range(model.table_count()):
 		var id: int = model.tables[i]
 		var card := order_cards[i]
 		if id == 0 or not model.orders.has(id):
@@ -637,6 +832,9 @@ func _open_reset() -> void:
 
 func _toggle_management() -> void:
 	if model.phase == "summary" or is_instance_valid(cooking_screen): return
+	if layout_panel.visible:
+		_cancel_layout_preview()
+		layout_panel.hide()
 	management_panel.visible = not management_panel.visible
 	if management_panel.visible: store_panel.hide()
 	if model.phase == "preopen": preopen_panel.visible = not management_panel.visible

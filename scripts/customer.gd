@@ -53,9 +53,12 @@ func leave() -> void:
 
 func _process(delta: float) -> void:
 	walking = not route.is_empty()
-	if walking:
+	var travel := SPEED * delta
+	while not route.is_empty() and travel > 0.0:
 		direction = (route[0] - position).normalized()
-		position = position.move_toward(route[0], SPEED * delta)
+		var step := minf(travel, position.distance_to(route[0]))
+		position = position.move_toward(route[0], step)
+		travel -= step
 		if position.distance_to(route[0]) < 0.1:
 			route.pop_front()
 			if route.is_empty():
@@ -67,4 +70,6 @@ func _process(delta: float) -> void:
 					direction = Vector2.LEFT
 					if browsing: thought.visible = true
 					seated.emit()
+		else:
+			break
 	avatar.update_pose(direction, walking)

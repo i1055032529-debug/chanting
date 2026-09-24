@@ -47,7 +47,8 @@ func _run() -> void:
 	check(game.try_interact("table_2"), "correct table receives food")
 	game.model.advance(Day.EAT_SECONDS)
 	check(game.model.coins == Day.STARTING_CASH + 24 + preload("res://scripts/cooking/cooking_model.gd").bonus_for_result(result), "quality and recipe price settle once")
-	for i in range(3): game.customers[2]._process(10.0)
+	for i in range(3):
+		if game.customers.has(2): game.customers[2]._process(10.0)
 	check(game.model.orders[2].state == "dirty", "customer departure creates clearing task")
 	check(game.try_interact("table_2"), "player collects plate")
 	game.player.position = game.target_position("sink")

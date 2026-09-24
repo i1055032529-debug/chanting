@@ -44,6 +44,12 @@ const RECIPES := {
 	"egg_noodles": {"name": "鸡蛋拌面", "price": 22, "speed": 0.93, "color": Color("d6b86c"), "ingredients": {"noodles": 1, "egg": 1}},
 }
 const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
+const Layout = preload("res://scripts/layout_rules.gd")
+const STARTING_TABLE_POSITIONS: Array[Vector2] = [Vector2(530, 460), Vector2(900, 460), Vector2(530, 575), Vector2(900, 575)]
+const FIFTH_TABLE_POSITION := Vector2(715, 575)
+const TABLE_PRICE := 40
+const EQUIPMENT_PRICE := 70
+const EQUIPMENT_SPEED_BONUS := 1.25
 
 var phase := "preopen"
 var day_number := 1
@@ -81,6 +87,8 @@ var spawn_clock := 0.0
 var selected_order_id := 0
 var orders: Dictionary = {}
 var tables: Array[int] = [0, 0, 0, 0]
+var table_positions: Array[Vector2] = STARTING_TABLE_POSITIONS.duplicate()
+var equipment_level := 0
 var pass_order_id := 0
 var pass_order_ids: Array[int] = []
 var carrying: Carry = Carry.NONE
@@ -122,6 +130,47 @@ func ingredient_available(id: String) -> int:
 
 func spendable_cash() -> int:
 	return maxi(0, coins - wage_reserved) if phase == "preopen" else coins
+
+
+func table_count() -> int:
+	return table_positions.size()
+
+
+func cooking_speed_multiplier() -> float:
+	return EQUIPMENT_SPEED_BONUS if equipment_level > 0 else 1.0
+
+
+func move_table(index: int, destination: Vector2) -> bool:
+	if phase != "preopen" or index < 0 or index >= table_count() or table_positions[index] == destination: return false
+	var candidate := table_positions.duplicate()
+	candidate[index] = destination
+	if not Layout.valid(candidate): return _reject("家具位置不可用：请避开其他家具并留出工作通路。")
+	table_positions = candidate
+	feedback.emit("%02d 号桌已调整位置。" % (index + 1))
+	changed.emit()
+	return true
+
+
+func buy_table(destination: Vector2 = FIFTH_TABLE_POSITION) -> bool:
+	if phase != "preopen" or table_count() >= TABLE_COUNT + 1: return false
+	var candidate := table_positions.duplicate()
+	candidate.append(destination)
+	if not Layout.valid(candidate): return _reject("新增餐桌位置不可用：请留出通路。")
+	if not spend("furniture", TABLE_PRICE, "furniture:table:%d" % table_count()): return _reject("购买餐桌失败：可用金币不足。")
+	table_positions = candidate
+	tables.append(0)
+	feedback.emit("已购入第 %d 张餐桌，支出 %d 金币。" % [table_count(), TABLE_PRICE])
+	changed.emit()
+	return true
+
+
+func upgrade_equipment() -> bool:
+	if phase != "preopen" or equipment_level > 0: return false
+	if not spend("equipment", EQUIPMENT_PRICE, "equipment:cook:1"): return _reject("升级设备失败：可用金币不足。")
+	equipment_level = 1
+	feedback.emit("烹饪设备已升级：主角和员工的制作速度提高 25%。")
+	changed.emit()
+	return true
 
 
 func set_employee_hired(hired: bool) -> bool:
@@ -382,7 +431,7 @@ func request_customer() -> bool:
 		changed.emit()
 		return true
 	var table_id := -1
-	for i in range(TABLE_COUNT):
+	for i in range(table_count()):
 		if tables[i] == 0:
 			table_id = i
 			break
@@ -682,7 +731,7 @@ func interact_as(actor: String, target: String, target_order_id: int = 0) -> boo
 		return true
 	if target.begins_with("table_"):
 		var table_id := target.trim_prefix("table_").to_int() - 1
-		if table_id < 0 or table_id >= TABLE_COUNT: return false
+		if table_id < 0 or table_id >= table_count(): return false
 		var id: int = tables[table_id]
 		if id == 0 or not orders.has(id): return _reject("这张桌子目前空着。")
 		var order: Dictionary = orders[id]
@@ -822,6 +871,8 @@ func next_day() -> bool:
 func new_game() -> void:
 	day_number = 1
 	coins = STARTING_CASH
+	table_positions = STARTING_TABLE_POSITIONS.duplicate()
+	equipment_level = 0
 	employee_hired_count = 0
 	employee_attending_count = 0
 	_update_staff_counts()
@@ -882,7 +933,8 @@ func _clear_day() -> void:
 	selected_order_id = 0
 	orders.clear()
 	browsers.clear()
-	tables = [0, 0, 0, 0]
+	tables.clear()
+	for i in range(table_count()): tables.append(0)
 	pass_order_id = 0
 	pass_order_ids.clear()
 	carrying = Carry.NONE

@@ -3,6 +3,8 @@ extends Node2D
 
 const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
 const SPEED := 160.0
+const IDLE_SPEED := 48.0
+const IDLE_RADIUS := 68.0
 const CELL := 20.0
 const GRID_ORIGIN := Vector2(70, 310)
 const GRID_WIDTH := 58
@@ -27,6 +29,8 @@ var grid: AStarGrid2D
 var cook_rules: RefCounted
 var failed_until: Dictionary = {}
 var clock := 0.0
+var idle_center := HOME
+var idle_wait := 0.0
 var tasks_completed := {"serve": 0, "clear": 0, "clean": 0, "cook": 0}
 @onready var avatar: Node2D = $Avatar
 @onready var title_label: Label = $Title
@@ -37,6 +41,7 @@ func configure(day_model: RefCounted, all_stations: Dictionary, worker_id: Strin
 	stations = all_stations
 	actor_id = worker_id
 	home_position = home
+	idle_center = home
 
 
 func _ready() -> void:
@@ -59,7 +64,7 @@ func _physics_process(delta: float) -> void:
 		if stage == "cooking": _cook(delta)
 		else: _move(delta)
 	else:
-		_move_home(delta)
+		_wander(delta)
 	avatar.update_pose(_direction(), not route.is_empty() and route_index < route.size(), model.worker_carrying(actor_id))
 	if model.worker_carrying(actor_id) == model.Carry.FOOD and model.orders.has(model.worker_carried_order(actor_id)):
 		avatar.held.modulate = model.RECIPES[model.orders[model.worker_carried_order(actor_id)].recipe].color
@@ -120,12 +125,12 @@ func _job_valid() -> bool:
 	return false
 
 
-func _move(delta: float) -> void:
+func _move(delta: float, speed: float = SPEED) -> void:
 	if route_index >= route.size():
 		_arrived()
 		return
 	var target: Vector2 = route[route_index]
-	position = position.move_toward(target, SPEED * delta)
+	position = position.move_toward(target, speed * delta)
 	if position.distance_to(target) <= 1.5:
 		route_index += 1
 		if route_index >= route.size(): _arrived()
@@ -141,6 +146,8 @@ func _arrived() -> void:
 		model.discard_employee_food(actor_id)
 		job.clear()
 		stage = "idle"
+		idle_center = position
+		idle_wait = randf_range(0.8, 1.8)
 		status = "失效菜品已回收"
 		return
 	match kind:
@@ -150,7 +157,7 @@ func _arrived() -> void:
 				return
 			cook_rules = CookingRules.new()
 			cook_rules.recipe_id = model.orders[id].recipe
-			cook_rules.recipe_speed = model.RECIPES[cook_rules.recipe_id].speed
+			cook_rules.recipe_speed = model.RECIPES[cook_rules.recipe_id].speed * model.cooking_speed_multiplier()
 			cook_rules.start()
 			stage = "cooking"
 			status = "正在制作%s" % model.recipe_name(cook_rules.recipe_id)
@@ -200,6 +207,8 @@ func _cook(delta: float) -> void:
 
 func _finish_job() -> void:
 	if not job.is_empty() and tasks_completed.has(job.kind): tasks_completed[job.kind] += 1
+	idle_center = position
+	idle_wait = randf_range(0.8, 1.8)
 	job.clear()
 	stage = "idle"
 	status = "待命"
@@ -213,6 +222,8 @@ func _finish_invalid() -> void:
 	if not job.is_empty() and job.kind != "discard":
 		if not transferred: model.abort_employee_job(job.kind, job.id, "订单已失效", actor_id)
 	job.clear()
+	idle_center = position
+	idle_wait = 0.8
 	stage = "idle"
 	route = PackedVector2Array()
 	route_index = 0
@@ -229,6 +240,7 @@ func _begin_discard() -> void:
 		model.discard_employee_food(actor_id)
 		job.clear()
 		stage = "idle"
+		idle_center = position
 		failure_reason = "回收台不可达，菜品已安全移除"
 		status = failure_reason
 
@@ -241,17 +253,30 @@ func _failed_path() -> void:
 	model.abort_employee_job(job.kind, job.id, failure_reason, actor_id)
 	job.clear()
 	stage = "idle"
+	idle_center = position
+	idle_wait = 0.8
 	status = failure_reason
 	route = PackedVector2Array()
 	route_index = 0
 
 
-func _move_home(delta: float) -> void:
-	# Idle spot stays out of the player's workstation approach points.
-	if position.distance_to(home_position) > 8.0:
-		if route.is_empty():
-			if not _route_to(home_position): return
-		_move(delta)
+func _wander(delta: float) -> void:
+	if route_index < route.size():
+		_move(delta, IDLE_SPEED)
+		return
+	idle_wait -= delta
+	if idle_wait > 0.0: return
+	idle_wait = randf_range(1.5, 3.0)
+	for attempt in range(8):
+		var offset := Vector2.RIGHT.rotated(randf_range(0.0, TAU)) * randf_range(25.0, IDLE_RADIUS)
+		var candidate := idle_center + offset
+		var open_cell := _nearest_open(candidate, 14.0)
+		if open_cell.x < 0: continue
+		var target := grid.get_point_position(open_cell)
+		if position.distance_to(target) < 18.0 or position.distance_to(target) > IDLE_RADIUS * 2.0: continue
+		if _route_to(target) and route.size() > 0: return
+		route = PackedVector2Array()
+		route_index = 0
 
 
 func reset_day() -> void:
@@ -265,6 +290,8 @@ func reset_day() -> void:
 	failed_until.clear()
 	tasks_completed = {"serve": 0, "clear": 0, "clean": 0, "cook": 0}
 	position = home_position
+	idle_center = position
+	idle_wait = randf_range(0.4, 1.4)
 
 
 func reset_new_game() -> void:
