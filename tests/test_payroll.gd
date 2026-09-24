@@ -17,8 +17,10 @@ func check(value: bool, message: String) -> void:
 func _run() -> void:
 	var model = Day.new()
 	check(not model.employee_hired and model.wage_reserved == 0 and model.spendable_cash() == Day.STARTING_CASH, "new game begins without hired staff")
+	model.coins = 30
+	model.day_opening_cash = 30
 	check(model.set_employee_hired(true) and not model.set_employee_hired(true), "one employee can be hired only once")
-	check(model.wage_reserved == Day.DAILY_WAGE and model.spendable_cash() == Day.STARTING_CASH - Day.DAILY_WAGE, "daily wage is reserved before opening")
+	check(model.wage_reserved == Day.DAILY_WAGE and model.spendable_cash() == 30 - Day.DAILY_WAGE, "daily wage is reserved before opening")
 	check(not model.purchase("tomato", 4) and model.purchase("tomato", 3), "procurement cannot consume reserved wages")
 	check(model.coins == Day.DAILY_WAGE and model.wage_reserved == Day.DAILY_WAGE and model.spendable_cash() == 0, "purchase leaves reserved payroll untouched")
 	check(model.set_employee_hired(false) and model.wage_reserved == 0 and model.spendable_cash() == Day.DAILY_WAGE, "stopping employment releases the reservation")
@@ -35,6 +37,8 @@ func _run() -> void:
 	model.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(model.summary().expenses.wages == 0, "absent employee receives no wage")
 	var poor = Day.new()
+	poor.coins = 30
+	poor.day_opening_cash = 30
 	poor.spend("equipment", 25, "leave-five")
 	check(poor.set_employee_hired(true) and poor.wage_reserved == 0 and poor.spendable_cash() == 5, "insufficient cash permits a contract but no payroll reserve")
 	poor.start_day()
@@ -63,7 +67,7 @@ func _run() -> void:
 	game.work_buttons["employee_enabled"].pressed.emit()
 	game._toggle_management()
 	game._toggle_store()
-	check(game.store_labels.overview.text.contains("可采购 12") and game.store_labels["buy_tomato"].disabled == false, "store shows spendable balance after payroll reservation")
+	check(game.store_labels.overview.text.contains("可采购 42") and game.store_labels["buy_tomato"].disabled == false, "store shows spendable balance after payroll reservation")
 	game._toggle_store()
 	check(game.start_day() and game.employee.visible and game.model.employee_attending, "contracted worker appears for service")
 	game.model.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)

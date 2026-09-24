@@ -16,6 +16,7 @@ func check(value: bool, message: String) -> void:
 
 func _run() -> void:
 	var lean = Day.new()
+	lean.coins = 30
 	check(lean.hire_employee() and lean.hire_employee() and lean.hire_employee() and not lean.hire_employee(), "hire up to three distinct workers")
 	check(lean.employee_hired_count == 3 and lean.wage_reserved == Day.DAILY_WAGE and lean.spendable_cash() == 12, "only affordable daily wages are reserved")
 	check(lean.start_day() and lean.employee_attending_count == 1 and lean.worker_active("employee") and not lean.worker_active("employee_2"), "partial budget brings only one worker on duty")
