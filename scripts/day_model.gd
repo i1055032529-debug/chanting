@@ -5,6 +5,7 @@ extends RefCounted
 signal changed
 signal feedback(message: String)
 signal customer_requested(order_id: int, table_id: int)
+signal customer_browsing(customer_id: int)
 signal customer_leave_requested(order_id: int)
 signal cooking_requested(order_id: int, attempt_id: int, recipe_id: String)
 signal cooking_expired(order_id: int)
@@ -22,7 +23,7 @@ const INGREDIENTS := {
 	"noodles": {"name": "面条", "price": 3, "starting": 8},
 	"tomato": {"name": "番茄", "price": 4, "starting": 8},
 }
-const RECIPE_IDS := ["rice", "noodles"]
+const RECIPE_IDS := ["rice", "noodles", "tomato_egg", "egg_noodles"]
 const DAY_SECONDS := 180.0
 const CLOSING_GRACE := 35.0
 const PATIENCE := 48.0
@@ -36,6 +37,8 @@ const PEAK_END := 55.0
 const RECIPES := {
 	"rice": {"name": "香煎蛋饭", "price": 18, "speed": 1.0, "color": Color("e7bf70"), "ingredients": {"rice": 1, "egg": 1}},
 	"noodles": {"name": "番茄炒面", "price": 24, "speed": 0.82, "color": Color("d97853"), "ingredients": {"noodles": 1, "tomato": 1}},
+	"tomato_egg": {"name": "番茄炒蛋", "price": 20, "speed": 0.9, "color": Color("e6a45f"), "ingredients": {"tomato": 1, "egg": 1}},
+	"egg_noodles": {"name": "鸡蛋拌面", "price": 22, "speed": 0.93, "color": Color("d6b86c"), "ingredients": {"noodles": 1, "egg": 1}},
 }
 const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
 
@@ -51,12 +54,15 @@ var ended := false
 var coins := STARTING_CASH
 var inventory: Dictionary = {}
 var reserved_inventory: Dictionary = {}
-var menu_enabled := {"rice": true, "noodles": true}
+var menu_enabled := {"rice": true, "noodles": true, "tomato_egg": true, "egg_noodles": true}
+var menu_prices := {"rice": 18, "noodles": 24, "tomato_egg": 20, "egg_noodles": 22}
+var browsers: Dictionary = {}
 var purchase_sequence := 1
 var emergency_uses_today := 0
 var ingredient_consumed_cost := 0
 var served := 0
 var lost := 0
+var no_sale := 0
 var good_reviews := 0
 var bad_reviews := 0
 var next_order_id := 1
@@ -136,6 +142,58 @@ func set_menu_enabled(recipe_id: String, enabled_menu: bool) -> bool:
 	return true
 
 
+func set_menu_price(recipe_id: String, price: int) -> bool:
+	if phase != "preopen" or not RECIPES.has(recipe_id) or price < 1 or price > 99 or menu_prices[recipe_id] == price: return false
+	menu_prices[recipe_id] = price
+	changed.emit()
+	return true
+
+
+func recipe_ingredients_text(recipe_id: String) -> String:
+	if not RECIPES.has(recipe_id): return ""
+	var parts: Array[String] = []
+	for ingredient: String in RECIPES[recipe_id].ingredients:
+		parts.append("%s×%d" % [INGREDIENTS[ingredient].name, RECIPES[recipe_id].ingredients[ingredient]])
+	return " + ".join(parts)
+
+
+func customer_preferences(customer_id: int) -> Array[String]:
+	var ranked: Array[Dictionary] = []
+	var favorite := (customer_id - 1 + day_number - 1) % RECIPE_IDS.size()
+	var indices := [favorite, (favorite + 1) % RECIPE_IDS.size(), (favorite + 3) % RECIPE_IDS.size()]
+	for distance in range(3):
+		var i: int = indices[distance]
+		var recipe_id: String = RECIPE_IDS[i]
+		var taste: float = [0.98, 0.82, 0.66][distance]
+		var personality := float((customer_id * 13 + i * 19) % 7 - 3) * 0.005
+		ranked.append({"id": recipe_id, "score": (taste + personality) * _price_factor(recipe_id)})
+	ranked.sort_custom(func(a: Dictionary, b: Dictionary): return a.score > b.score)
+	var result: Array[String] = []
+	for entry in ranked: result.append(entry.id)
+	return result
+
+
+func _price_factor(recipe_id: String) -> float:
+	var ratio := float(menu_prices[recipe_id]) / float(RECIPES[recipe_id].price)
+	return clampf(1.0 - maxf(0.0, ratio - 1.0) * 0.8 + maxf(0.0, 1.0 - ratio) * 0.1, 0.04, 1.05)
+
+
+func purchase_probability(customer_id: int, recipe_id: String) -> float:
+	if not RECIPES.has(recipe_id): return 0.0
+	var favorite := (customer_id - 1 + day_number - 1) % RECIPE_IDS.size()
+	var index := RECIPE_IDS.find(recipe_id)
+	var indices := [favorite, (favorite + 1) % RECIPE_IDS.size(), (favorite + 3) % RECIPE_IDS.size()]
+	var distance := indices.find(index)
+	if distance < 0: return 0.0
+	var taste: float = [0.98, 0.82, 0.66][distance]
+	var personality := float((customer_id * 13 + index * 19) % 7 - 3) * 0.005
+	return clampf((taste + personality) * _price_factor(recipe_id), 0.0, 1.0)
+
+
+func _purchase_roll(customer_id: int, recipe_id: String) -> float:
+	return float((customer_id * 17 + RECIPE_IDS.find(recipe_id) * 23 + day_number * 11) % 100) / 100.0
+
+
 func emergency_available() -> bool:
 	if phase != "preopen" or emergency_uses_today >= 1: return false
 	var cheapest_completion := 999999
@@ -212,6 +270,12 @@ func advance(delta: float) -> void:
 				order.eat_clock += delta
 				if order.eat_clock >= EAT_SECONDS:
 					_pay_and_leave(id)
+	for browser_id: int in browsers.keys():
+		if browsers[browser_id].state != "browsing": continue
+		browsers[browser_id].remaining -= delta
+		if browsers[browser_id].remaining <= 0.0:
+			browsers[browser_id].state = "leaving"
+			customer_leave_requested.emit(browser_id)
 	if not day_closed:
 		spawn_clock += delta
 		var wave_time := fmod(elapsed, WAVE_SECONDS)
@@ -226,26 +290,41 @@ func advance(delta: float) -> void:
 
 
 func request_customer() -> bool:
-	if phase != "open" or day_closed or ended or orders.size() >= TABLE_COUNT: return false
+	if phase != "open" or day_closed or ended: return false
+	var id := next_order_id
+	var preferences := customer_preferences(id)
+	var recipe_id := ""
+	var choice_rank := -1
+	for rank in range(preferences.size()):
+		var candidate: String = preferences[rank]
+		if menu_enabled[candidate] and portions_available(candidate) > 0 and _purchase_roll(id, candidate) < purchase_probability(id, candidate):
+			recipe_id = candidate
+			choice_rank = rank
+			break
+	if recipe_id == "":
+		next_order_id += 1
+		browsers[id] = {"state": "arriving", "remaining": 3.5}
+		customer_browsing.emit(id)
+		feedback.emit("一位顾客没找到愿意购买的菜，正在店内看看。")
+		changed.emit()
+		return true
 	var table_id := -1
 	for i in range(TABLE_COUNT):
 		if tables[i] == 0:
 			table_id = i
 			break
-	if table_id < 0: return false
-	var id := next_order_id
-	var preferred := "rice" if id % 2 == 1 else "noodles"
-	var alternatives := [preferred, "noodles" if preferred == "rice" else "rice"]
-	var recipe_id := ""
-	for candidate in alternatives:
-		if menu_enabled[candidate] and portions_available(candidate) > 0:
-			recipe_id = candidate
-			break
-	if recipe_id == "" or not _reserve_recipe(recipe_id): return false
+	if table_id < 0 or not _reserve_recipe(recipe_id): return false
 	next_order_id += 1
-	orders[id] = {"id": id, "table": table_id, "recipe": recipe_id, "state": "arriving", "waited": 0.0, "eat_clock": 0.0, "score": 0, "bonus": 0, "review": "", "cook_attempt": 0, "ingredients_reserved": true, "ingredients_consumed": false}
+	orders[id] = {"id": id, "table": table_id, "recipe": recipe_id, "price": menu_prices[recipe_id], "choice_rank": choice_rank, "satisfaction": 100 - choice_rank * 20, "state": "arriving", "waited": 0.0, "eat_clock": 0.0, "score": 0, "bonus": 0, "review": "", "cook_attempt": 0, "ingredients_reserved": true, "ingredients_consumed": false}
 	tables[table_id] = id
 	customer_requested.emit(id, table_id)
+	changed.emit()
+	return true
+
+
+func browser_arrived(id: int) -> bool:
+	if not browsers.has(id) or browsers[id].state != "arriving": return false
+	browsers[id].state = "browsing"
 	changed.emit()
 	return true
 
@@ -254,12 +333,24 @@ func seat_customer(id: int) -> bool:
 	if not orders.has(id) or orders[id].state != "arriving": return false
 	orders[id].state = "waiting"
 	if selected_order_id == 0: selected_order_id = id
-	feedback.emit("%02d 号桌点了%s。" % [orders[id].table + 1, recipe_name(orders[id].recipe)])
+	if orders[id].choice_rank > 0:
+		feedback.emit("%02d 号桌没买到首选，改点%s；满意度 %d。" % [orders[id].table + 1, recipe_name(orders[id].recipe), orders[id].satisfaction])
+	else:
+		feedback.emit("%02d 号桌点了%s。" % [orders[id].table + 1, recipe_name(orders[id].recipe)])
 	changed.emit()
 	return true
 
 
 func customer_departed(id: int) -> bool:
+	if browsers.has(id):
+		browsers.erase(id)
+		lost += 1
+		no_sale += 1
+		bad_reviews += 1
+		reviews.append({"table": 0, "good": false, "reason": "没有想买的菜", "satisfaction": 0})
+		changed.emit()
+		_finish_if_clear()
+		return true
 	if not orders.has(id): return false
 	var order: Dictionary = orders[id]
 	if order.state == "leaving_paid":
@@ -610,7 +701,7 @@ func summary() -> Dictionary:
 	var totals := {"income": 0, "purchase": 0, "wages": 0, "furniture": 0, "equipment": 0, "expansion": 0}
 	for entry in ledger:
 		totals[entry.kind] += absi(entry.amount)
-	return {"day": day_number, "opening_cash": day_opening_cash, "coins": coins, "cash_change": coins - day_opening_cash, "income": totals.income, "expenses": {"purchase": totals.purchase, "wages": totals.wages, "furniture": totals.furniture, "equipment": totals.equipment, "expansion": totals.expansion}, "ingredient_cost": ingredient_consumed_cost, "operating_profit": totals.income - ingredient_consumed_cost - totals.wages, "ledger": ledger.duplicate(true), "served": served, "lost": lost, "good_reviews": good_reviews, "bad_reviews": bad_reviews, "stains": stains.size(), "elapsed": elapsed, "payments": payments.duplicate(), "reviews": reviews.duplicate(true), "average_wait": _average_wait(), "reason": "等餐超时" if lost > 0 else "营业完成"}
+	return {"day": day_number, "opening_cash": day_opening_cash, "coins": coins, "cash_change": coins - day_opening_cash, "income": totals.income, "expenses": {"purchase": totals.purchase, "wages": totals.wages, "furniture": totals.furniture, "equipment": totals.equipment, "expansion": totals.expansion}, "ingredient_cost": ingredient_consumed_cost, "operating_profit": totals.income - ingredient_consumed_cost - totals.wages, "ledger": ledger.duplicate(true), "served": served, "lost": lost, "no_sale": no_sale, "good_reviews": good_reviews, "bad_reviews": bad_reviews, "stains": stains.size(), "elapsed": elapsed, "payments": payments.duplicate(), "reviews": reviews.duplicate(true), "average_wait": _average_wait(), "reason": "未找到想买的菜" if lost > 0 and no_sale == lost else "等餐超时" if lost > 0 else "营业完成"}
 
 
 func start_day() -> bool:
@@ -642,7 +733,8 @@ func new_game() -> void:
 	coins = STARTING_CASH
 	day_opening_cash = STARTING_CASH
 	_reset_inventory()
-	menu_enabled = {"rice": true, "noodles": true}
+	menu_enabled = {"rice": true, "noodles": true, "tomato_egg": true, "egg_noodles": true}
+	menu_prices = {"rice": 18, "noodles": 24, "tomato_egg": 20, "egg_noodles": 22}
 	purchase_sequence = 1
 	ledger.clear()
 	day_reports.clear()
@@ -683,11 +775,13 @@ func _clear_day() -> void:
 	ended = false
 	served = 0
 	lost = 0
+	no_sale = 0
 	good_reviews = 0
 	bad_reviews = 0
 	spawn_clock = 0.0
 	selected_order_id = 0
 	orders.clear()
+	browsers.clear()
 	tables = [0, 0, 0, 0]
 	pass_order_id = 0
 	pass_order_ids.clear()
@@ -739,18 +833,20 @@ func _timeout(id: int) -> void:
 func _pay_and_leave(id: int) -> void:
 	if not orders.has(id) or orders[id].state != "eating": return
 	var order: Dictionary = orders[id]
-	var amount: int = RECIPES[order.recipe].price + order.bonus
+	var amount: int = order.price + order.bonus
 	if not _post_transaction("income", amount, "payment:%d" % id): return
 	order.state = "leaving_paid"
 	var clean := stains.size() <= 1
 	var prompt := ""
-	if order.waited > 34.0: prompt = "等待较久"
+	if order.choice_rank >= 2: prompt = "只能选第三喜好的菜"
+	elif order.waited > 34.0: prompt = "等待较久"
 	elif order.score < 65: prompt = "菜品品质普通"
 	elif not clean: prompt = "地面不够整洁"
+	elif order.choice_rank == 1: prompt = "没买到首选，但替代菜还不错"
 	else: prompt = "出餐及时，味道很好"
-	var good := prompt == "出餐及时，味道很好"
+	var good := prompt in ["出餐及时，味道很好", "没买到首选，但替代菜还不错"]
 	order.review = prompt
-	reviews.append({"table": order.table + 1, "good": good, "reason": prompt})
+	reviews.append({"table": order.table + 1, "good": good, "reason": prompt, "satisfaction": order.satisfaction})
 	if good: good_reviews += 1
 	else: bad_reviews += 1
 	wait_records.append(order.waited)
@@ -771,6 +867,13 @@ func _make_stain(table_id: int) -> void:
 func _force_finish() -> void:
 	for id: int in orders.keys():
 		if orders[id].state in ["arriving", "waiting", "cooking", "ready", "carried"]: _timeout(id)
+	for id: int in browsers.keys():
+		customer_leave_requested.emit(id)
+		browsers.erase(id)
+		lost += 1
+		no_sale += 1
+		bad_reviews += 1
+		reviews.append({"table": 0, "good": false, "reason": "没有想买的菜", "satisfaction": 0})
 	_finish_day()
 
 
@@ -778,7 +881,7 @@ func _finish_if_clear() -> void:
 	if not day_closed or ended: return
 	for order in orders.values():
 		if order.state not in ["dirty", "clearing"]: return
-	if carrying != Carry.NONE or employee_carrying != Carry.NONE or not stains.is_empty(): return
+	if carrying != Carry.NONE or employee_carrying != Carry.NONE or not stains.is_empty() or not browsers.is_empty(): return
 	_finish_day()
 
 

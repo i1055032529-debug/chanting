@@ -47,6 +47,7 @@ jobs:
           godot --headless --path . --script tests/test_employee_comparison.gd 2>&1 | tee test-results/employee-comparison.log
           godot --headless --path . --script tests/test_multi_day.gd 2>&1 | tee test-results/multi-day.log
           godot --headless --path . --script tests/test_inventory.gd 2>&1 | tee test-results/inventory.log
+          godot --headless --path . --script tests/test_customer_choice.gd 2>&1 | tee test-results/customer-choice.log
           if grep -E 'SCRIPT ERROR:|^ERROR:|FAIL:' test-results/*.log; then
             exit 1
           fi

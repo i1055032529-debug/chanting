@@ -58,6 +58,7 @@ func _ready() -> void:
 	_build_ui()
 	player.locked = true
 	model.customer_requested.connect(_spawn_customer)
+	model.customer_browsing.connect(_spawn_browser)
 	model.customer_leave_requested.connect(_leave_customer)
 	model.cooking_requested.connect(_open_cooking)
 	model.cooking_expired.connect(_expire_cooking)
@@ -263,6 +264,17 @@ func _spawn_customer(id: int, table_id: int) -> void:
 	actors.add_child(customer)
 
 
+func _spawn_browser(id: int) -> void:
+	var customer = Customer.instantiate()
+	customer.configure_browsing($Entrance.global_position, Vector2(575 + id % 3 * 42, 375))
+	customer.seated.connect(func(): model.browser_arrived(id))
+	customer.departed.connect(func():
+		customers.erase(id)
+		model.customer_departed(id))
+	customers[id] = customer
+	actors.add_child(customer)
+
+
 func _leave_customer(id: int) -> void:
 	if customers.has(id) and is_instance_valid(customers[id]): customers[id].leave()
 
@@ -430,28 +442,33 @@ func _build_ui() -> void:
 
 
 func _build_store_panel() -> void:
-	store_panel = _panel(Rect2(190, 165, 900, 510), Color("30291f"))
+	store_panel = _panel(Rect2(190, 71, 900, 625), Color("30291f"))
 	store_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	store_panel.hide()
 	_child_label(store_panel, "食材采购与菜单", Vector2(30, 18), Vector2(660, 45), 28, GOLD)
 	store_labels["overview"] = _child_label(store_panel, "", Vector2(30, 65), Vector2(820, 28), 16, CREAM)
 	for i in range(Model.INGREDIENTS.size()):
 		var ingredient: String = Model.INGREDIENTS.keys()[i]
-		var y := 107 + i * 56
+		var y := 98 + i * 49
 		store_labels["stock_" + ingredient] = _child_label(store_panel, "", Vector2(30, y), Vector2(395, 32), 17, CREAM)
 		store_labels["minus_" + ingredient] = _make_button(store_panel, "−", Rect2(430, y, 40, 32), func(): _adjust_purchase(ingredient, -1))
 		store_labels["quantity_" + ingredient] = _child_label(store_panel, "", Vector2(477, y), Vector2(48, 32), 17, CREAM)
 		store_labels["plus_" + ingredient] = _make_button(store_panel, "+", Rect2(530, y, 40, 32), func(): _adjust_purchase(ingredient, 1))
 		store_labels["subtotal_" + ingredient] = _child_label(store_panel, "", Vector2(584, y), Vector2(120, 32), 16, GOLD)
 		store_labels["buy_" + ingredient] = _make_button(store_panel, "购买", Rect2(720, y, 135, 32), func(): _buy_ingredient(ingredient))
-	_child_label(store_panel, "今日菜单", Vector2(30, 334), Vector2(270, 32), 22, GOLD)
+	_child_label(store_panel, "总菜谱 · 每份用料 / 今日定价", Vector2(30, 306), Vector2(550, 32), 22, GOLD)
+	_child_label(store_panel, "价格越高，顾客愿意购买的概率越低。", Vector2(570, 312), Vector2(300, 26), 14, MUTED)
 	for i in range(Model.RECIPE_IDS.size()):
 		var recipe_id: String = Model.RECIPE_IDS[i]
-		var y := 374 + i * 40
-		store_labels["menu_" + recipe_id] = _child_label(store_panel, "", Vector2(30, y), Vector2(620, 30), 17, CREAM)
-		store_labels["toggle_" + recipe_id] = _make_button(store_panel, "", Rect2(710, y, 145, 30), func(): _toggle_recipe(recipe_id))
-	store_labels["emergency"] = _make_button(store_panel, "应急补给 · 1 份蛋饭食材", Rect2(30, 462, 400, 34), _claim_emergency)
-	_button(store_panel, "返回开店准备", Rect2(596, 462, 259, 34), _toggle_store)
+		var y := 340 + i * 59
+		store_labels["menu_" + recipe_id] = _child_label(store_panel, "", Vector2(30, y), Vector2(420, 26), 17, CREAM)
+		store_labels["ingredients_" + recipe_id] = _child_label(store_panel, "", Vector2(30, y + 27), Vector2(430, 25), 15, MUTED)
+		store_labels["price_minus_" + recipe_id] = _make_button(store_panel, "−", Rect2(459, y + 9, 40, 32), func(): _adjust_menu_price(recipe_id, -1))
+		store_labels["price_" + recipe_id] = _child_label(store_panel, "", Vector2(510, y + 11), Vector2(100, 28), 17, GOLD)
+		store_labels["price_plus_" + recipe_id] = _make_button(store_panel, "+", Rect2(614, y + 9, 40, 32), func(): _adjust_menu_price(recipe_id, 1))
+		store_labels["toggle_" + recipe_id] = _make_button(store_panel, "", Rect2(710, y + 9, 145, 32), func(): _toggle_recipe(recipe_id))
+	store_labels["emergency"] = _make_button(store_panel, "应急补给 · 1 份蛋饭食材", Rect2(30, 583, 400, 34), _claim_emergency)
+	_button(store_panel, "返回开店准备", Rect2(596, 583, 259, 34), _toggle_store)
 
 
 func _adjust_purchase(ingredient: String, amount: int) -> void:
@@ -466,6 +483,11 @@ func _buy_ingredient(ingredient: String) -> void:
 
 func _toggle_recipe(recipe_id: String) -> void:
 	model.set_menu_enabled(recipe_id, not model.menu_enabled[recipe_id])
+	_refresh_store_panel()
+
+
+func _adjust_menu_price(recipe_id: String, amount: int) -> void:
+	model.set_menu_price(recipe_id, model.menu_prices[recipe_id] + amount)
 	_refresh_store_panel()
 
 
@@ -485,7 +507,7 @@ func _toggle_store() -> void:
 
 func _refresh_store_panel() -> void:
 	if store_labels.is_empty(): return
-	store_labels.overview.text = "现金 %d 金币  ·  蛋饭可做 %d 份  ·  炒面可做 %d 份" % [model.coins, model.portions_available("rice"), model.portions_available("noodles")]
+	store_labels.overview.text = "现金 %d 金币  ·  下方列出全部菜谱、每份原料及可制作数量" % model.coins
 	for ingredient: String in Model.INGREDIENTS:
 		var definition: Dictionary = Model.INGREDIENTS[ingredient]
 		store_labels["stock_" + ingredient].text = "%s  单价 %d   库存 %d / 预留 %d / 可用 %d" % [definition.name, definition.price, model.inventory[ingredient], model.reserved_inventory[ingredient], model.ingredient_available(ingredient)]
@@ -495,7 +517,11 @@ func _refresh_store_panel() -> void:
 		store_labels["plus_" + ingredient].disabled = purchase_quantities[ingredient] >= 20
 		store_labels["buy_" + ingredient].disabled = definition.price * purchase_quantities[ingredient] > model.coins
 	for recipe_id: String in Model.RECIPE_IDS:
-		store_labels["menu_" + recipe_id].text = "%s  ·  可做 %d 份" % [model.recipe_name(recipe_id), model.portions_available(recipe_id)]
+		store_labels["menu_" + recipe_id].text = "%s  ·  建议 %d  ·  可做 %d 份" % [model.recipe_name(recipe_id), Model.RECIPES[recipe_id].price, model.portions_available(recipe_id)]
+		store_labels["ingredients_" + recipe_id].text = "每份：" + model.recipe_ingredients_text(recipe_id)
+		store_labels["price_" + recipe_id].text = "%d 金币" % model.menu_prices[recipe_id]
+		store_labels["price_minus_" + recipe_id].disabled = model.menu_prices[recipe_id] <= 1
+		store_labels["price_plus_" + recipe_id].disabled = model.menu_prices[recipe_id] >= 99
 		store_labels["toggle_" + recipe_id].text = "在售" if model.menu_enabled[recipe_id] else "已停售"
 	store_labels.emergency.disabled = not model.emergency_available()
 
@@ -514,7 +540,7 @@ func _refresh_ui() -> void:
 	elif model.phase == "summary": labels.time.text = "今日结算"
 	else: labels.time.text = ("收尾 %02d:%02d" % [maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) / 60, maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) % 60]) if model.day_closed else ("营业 %02d:%02d" % [remaining / 60, remaining % 60])
 	if preopen_text != null:
-		preopen_text.text = "第 %d 天  ·  当前现金 %d 金币\n蛋饭可做 %d 份  ·  炒面可做 %d 份\n\n开店前采购食材、调整菜单；准备好后开始营业。" % [model.day_number, model.coins, model.portions_available("rice"), model.portions_available("noodles")]
+		preopen_text.text = "第 %d 天  ·  当前现金 %d 金币\n当前有 %d 道菜谱，可查看每份用料并调整售价。\n\n开店前采购食材、调整菜单；准备好后开始营业。" % [model.day_number, model.coins, Model.RECIPE_IDS.size()]
 	labels.clean.text = "整洁 %d%%" % [roundi((1.0 - float(model.stains.size()) / Model.STAIN_LIMIT) * 100)]
 	labels.clean.add_theme_color_override("font_color", GREEN if model.stains.size() <= 1 else RED)
 	labels.employee.text = "员工：%s%s" % [employee.status, (" · %s" % employee.failure_reason) if employee.failure_reason != "" and employee.failure_reason != employee.status else ""]
@@ -529,7 +555,8 @@ func _refresh_ui() -> void:
 		var status: String = {"arriving": "入店中", "waiting": "待制作", "cooking": "制作中", "ready": "待取餐", "carried": "待上菜", "eating": "用餐中", "leaving_paid": "已付款", "leaving_lost": "超时离开", "dirty": "待收盘", "clearing": "待回收"}.get(order.state, order.state)
 		var urgent: bool = order.state in ["waiting", "cooking", "ready", "carried"] and model.patience_remaining(id) <= 12.0
 		var selected := "▶ " if model.selected_order_id == id and order.state == "waiting" else ""
-		card.text = "%s%02d 号桌 · %s\n%s  %s" % [selected, i + 1, status, model.recipe_name(order.recipe), ("剩 %d 秒 !" % ceili(model.patience_remaining(id))) if order.state in ["waiting", "cooking", "ready", "carried"] else ""]
+		var detail := ("剩 %d 秒%s" % [ceili(model.patience_remaining(id)), (" · 满意 %d" % order.satisfaction) if order.choice_rank > 0 else ""]) if order.state in ["waiting", "cooking", "ready", "carried"] else (("满意 %d" % order.satisfaction) if order.choice_rank > 0 else "")
+		card.text = "%s%02d 号桌 · %s\n%s  %s" % [selected, i + 1, status, model.recipe_name(order.recipe), detail]
 		card.add_theme_color_override("font_color", RED if urgent else (GOLD if selected != "" else CREAM))
 
 
@@ -543,7 +570,7 @@ func _show_summary(result: Dictionary) -> void:
 func _format_summary(result: Dictionary) -> String:
 	var expenses: Dictionary = result.expenses
 	var spending: int = expenses.purchase + expenses.wages + expenses.furniture + expenses.equipment + expenses.expansion
-	return "第 %d 天  日初 %d  +营业 %d  -支出 %d  =日末 %d\n现金变化 %+d · 食材消耗成本 %d · 估算经营收益 %d\n采购 %d · 工资 %d · 家具 %d · 设备 %d · 扩建 %d\n完成 %d 桌 · 流失 %d 位 · 好评 %d · 差评 %d\n平均等餐 %.1f 秒 · 剩余污渍 %d\n员工完成：做菜 %d · 上菜 %d · 收盘 %d · 清洁 %d\n%s" % [result.day, result.opening_cash, result.income, spending, result.coins, result.cash_change, result.ingredient_cost, result.operating_profit, expenses.purchase, expenses.wages, expenses.furniture, expenses.equipment, expenses.expansion, result.served, result.lost, result.good_reviews, result.bad_reviews, result.average_wait, result.stains, employee.tasks_completed.cook, employee.tasks_completed.serve, employee.tasks_completed.clear, employee.tasks_completed.clean, ("%d 位顾客因等餐超时离店。" % result.lost) if result.lost > 0 else "今日营业已完成。"]
+	return "第 %d 天  日初 %d  +营业 %d  -支出 %d  =日末 %d\n现金变化 %+d · 食材消耗成本 %d · 估算经营收益 %d\n采购 %d · 工资 %d · 家具 %d · 设备 %d · 扩建 %d\n完成 %d 桌 · 流失 %d 位（未购买 %d）· 好评 %d · 差评 %d\n平均等餐 %.1f 秒 · 剩余污渍 %d\n员工完成：做菜 %d · 上菜 %d · 收盘 %d · 清洁 %d\n%s" % [result.day, result.opening_cash, result.income, spending, result.coins, result.cash_change, result.ingredient_cost, result.operating_profit, expenses.purchase, expenses.wages, expenses.furniture, expenses.equipment, expenses.expansion, result.served, result.lost, result.no_sale, result.good_reviews, result.bad_reviews, result.average_wait, result.stains, employee.tasks_completed.cook, employee.tasks_completed.serve, employee.tasks_completed.clear, employee.tasks_completed.clean, ("%d 位顾客未完成消费。" % result.lost) if result.lost > 0 else "今日营业已完成。"]
 
 
 func _toggle_pause() -> void:
