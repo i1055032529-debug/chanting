@@ -6,6 +6,7 @@ const TableScene = preload("res://scenes/furniture/table.tscn")
 const ChairScene = preload("res://scenes/furniture/chair.tscn")
 const CookingScreen = preload("res://scenes/cooking/cooking_screen.tscn")
 const StainScript = preload("res://scripts/stain.gd")
+const EmployeeScene = preload("res://scenes/actors/employee.tscn")
 const INTERACT_DISTANCE := 55.0
 const CREAM := Color("f4e5cd")
 const MUTED := Color("bea993")
@@ -17,6 +18,7 @@ const STAIN_POSITIONS := [Vector2(455, 532), Vector2(795, 532), Vector2(455, 630
 
 var model := Model.new()
 var player: CharacterBody2D
+var employee: Node2D
 var actors: Node2D
 var customers: Dictionary = {}
 var stations: Dictionary = {}
@@ -29,6 +31,8 @@ var prompt: Label
 var pause_panel: Panel
 var summary_panel: Panel
 var summary_text: Label
+var management_panel: Panel
+var work_buttons: Dictionary = {}
 var reset_dialog: ConfirmationDialog
 var debug_label: Label
 var debug_visible := false
@@ -68,6 +72,7 @@ func _process(delta: float) -> void:
 		player.avatar.held.modulate = Color.WHITE
 	_sync_stains()
 	_refresh_ui()
+	_refresh_employee_panel()
 	nearest = closest_target()
 	prompt.text = "[ E ] %s · %s" % [stations[nearest].display_name, _action_hint(nearest)] if nearest != "" else "靠近工作台、餐桌或污渍按 E 交互；Q 切换待做订单"
 	labels.toast.text = toast if toast_time > 0.0 else _next_step()
@@ -105,6 +110,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("select_order") and not event.is_echo():
 		var id := model.select_next()
 		_show_feedback("已选中订单 #%d，%02d 号桌。" % [id, model.orders[id].table + 1] if id != 0 else "当前没有待做订单。")
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("employee_menu") and not event.is_echo():
+		_toggle_management()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("toggle_debug"):
 		debug_visible = not debug_visible
@@ -154,6 +162,8 @@ func reset_run() -> void:
 		if is_instance_valid(stain_nodes[key]): stain_nodes[key].queue_free()
 	stain_nodes.clear()
 	model.reset()
+	employee.reset_day()
+	management_panel.hide()
 	player.global_position = $PlayerStart.global_position
 	player.velocity = Vector2.ZERO
 	player.locked = false
@@ -164,7 +174,7 @@ func reset_run() -> void:
 
 
 func _setup_input() -> void:
-	var bindings := {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT], "move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN], "interact": [KEY_E, KEY_SPACE], "select_order": [KEY_Q], "pause_game": [KEY_ESCAPE], "toggle_debug": [KEY_F1], "debug_spawn": [KEY_N], "debug_reset": [KEY_R], "cook_heat": [KEY_SPACE], "cook_stir": [KEY_F], "cook_plate": [KEY_E], "cook_back": [KEY_B]}
+	var bindings := {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT], "move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN], "interact": [KEY_E, KEY_SPACE], "select_order": [KEY_Q], "employee_menu": [KEY_M], "pause_game": [KEY_ESCAPE], "toggle_debug": [KEY_F1], "debug_spawn": [KEY_N], "debug_reset": [KEY_R], "cook_heat": [KEY_SPACE], "cook_stir": [KEY_F], "cook_plate": [KEY_E], "cook_back": [KEY_B]}
 	for action: String in bindings:
 		if not InputMap.has_action(action): InputMap.add_action(action)
 		for code: int in bindings[action]:
@@ -194,6 +204,10 @@ func _build_room() -> void:
 		stations[table.station_id] = table
 	for id: String in ["stove", "pass", "sink"]:
 		stations[id] = actors.get_node(id.capitalize())
+	employee = EmployeeScene.instantiate()
+	employee.position = Vector2(375, 570)
+	employee.configure(model, stations)
+	actors.add_child(employee)
 
 
 func _spawn_customer(id: int, table_id: int) -> void:
@@ -235,6 +249,7 @@ func _sync_stains() -> void:
 func _open_cooking(id: int, attempt: int, recipe_id: String) -> void:
 	player.locked = true
 	player.velocity = Vector2.ZERO
+	management_panel.hide()
 	cooking_layer = CanvasLayer.new()
 	cooking_layer.layer = 10
 	cooking_layer.process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -293,6 +308,8 @@ func _build_ui() -> void:
 	_label("lost", "流失 0", Vector2(630, 28), Vector2(130, 29), 18, RED)
 	_label("time", "营业 03:00", Vector2(780, 22), Vector2(220, 37), 23, GOLD)
 	_label("clean", "整洁 100%", Vector2(1040, 28), Vector2(210, 30), 18, GREEN)
+	_label("employee", "员工：待命", Vector2(29, 58), Vector2(900, 25), 14, GREEN)
+	_button(ui, "M · 员工管理", Rect2(1044, 56, 208, 26), _toggle_management)
 	for i in range(Model.TABLE_COUNT):
 		var x := 26 + i * 312
 		_panel(Rect2(x, 86, 296, 66), Color("493321"))
@@ -302,9 +319,25 @@ func _build_ui() -> void:
 	_panel(Rect2(0, 701, 1280, 99), Color("2d2119"))
 	_label("toast", toast, Vector2(32, 710), Vector2(1210, 28), 16, CREAM)
 	prompt = _label("prompt", "", Vector2(32, 750), Vector2(810, 26), 15, GOLD)
-	_label("controls", "WASD 移动  E 交互  Q 切换订单  Esc 暂停", Vector2(837, 752), Vector2(420, 28), 14, MUTED)
+	_label("controls", "WASD 移动  E 交互  Q 订单  M 员工  Esc 暂停", Vector2(802, 752), Vector2(457, 28), 14, MUTED)
 	debug_label = _label("debug", "", Vector2(35, 370), Vector2(640, 260), 12, CREAM)
 	debug_label.visible = false
+	management_panel = _panel(Rect2(808, 177, 445, 402), Color("30291f"))
+	management_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	management_panel.hide()
+	_child_label(management_panel, "员工工作安排", Vector2(20, 15), Vector2(300, 42), 26, GOLD)
+	_child_label(management_panel, "顺序越靠上越优先；调整后先完成手头任务。", Vector2(20, 57), Vector2(402, 32), 14, MUTED)
+	_button(management_panel, "启用 / 休息", Rect2(20, 94, 170, 32), _toggle_employee)
+	for i in range(4):
+		var row_kind: String = ["serve", "clear", "cook", "clean"][i]
+		var row_y := 139 + i * 57
+		var row := _child_label(management_panel, "", Vector2(20, row_y), Vector2(200, 34), 18, CREAM)
+		work_buttons["label_" + row_kind] = row
+		var toggle := _make_button(management_panel, "开 / 关", Rect2(246, row_y, 80, 32), func(): _toggle_employee_work(row_kind))
+		work_buttons["toggle_" + row_kind] = toggle
+		var up_button := _make_button(management_panel, "↑ 优先", Rect2(336, row_y, 89, 32), func(): _move_employee_priority(row_kind))
+		work_buttons["up_" + row_kind] = up_button
+	_child_label(management_panel, "员工无需手动做菜，但会占用炉灶和出餐位。", Vector2(20, 370), Vector2(420, 24), 13, MUTED)
 	pause_panel = _panel(Rect2(425, 270, 430, 260), Color("38291f"))
 	pause_panel.visible = false
 	pause_panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -353,6 +386,7 @@ func _refresh_ui() -> void:
 	labels.time.text = ("收尾 %02d:%02d" % [maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) / 60, maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) % 60]) if model.day_closed else ("营业 %02d:%02d" % [remaining / 60, remaining % 60])
 	labels.clean.text = "整洁 %d%%" % [roundi((1.0 - float(model.stains.size()) / Model.STAIN_LIMIT) * 100)]
 	labels.clean.add_theme_color_override("font_color", GREEN if model.stains.size() <= 1 else RED)
+	labels.employee.text = "员工：%s%s" % [employee.status, (" · %s" % employee.failure_reason) if employee.failure_reason != "" and employee.failure_reason != employee.status else ""]
 	for i in range(Model.TABLE_COUNT):
 		var id: int = model.tables[i]
 		var card := order_cards[i]
@@ -370,13 +404,15 @@ func _refresh_ui() -> void:
 
 func _show_summary(result: Dictionary) -> void:
 	_close_cooking()
-	summary_text.text = "收入  %d 金币       完成  %d 桌       流失  %d 位\n\n好评  %d       差评  %d       剩余污渍  %d\n平均等餐 %.1f 秒\n\n%s\n\n%s" % [result.coins, result.served, result.lost, result.good_reviews, result.bad_reviews, result.stains, result.average_wait, ("%d 位顾客因等餐超时离店。" % result.lost) if result.lost > 0 else "全部顾客都获得服务。", "收尾时间已到；可以开始新的一天。" if result.elapsed >= Model.DAY_SECONDS + Model.CLOSING_GRACE else "今日营业已完成。"]
+	summary_text.text = "收入 %d 金币    完成 %d 桌    流失 %d 位\n好评 %d    差评 %d    剩余污渍 %d\n平均等餐 %.1f 秒\n%s\n员工完成：做菜 %d · 上菜 %d · 收盘 %d · 清洁 %d\n%s" % [result.coins, result.served, result.lost, result.good_reviews, result.bad_reviews, result.stains, result.average_wait, ("%d 位顾客因等餐超时离店。" % result.lost) if result.lost > 0 else "全部顾客都获得服务。", employee.tasks_completed.cook, employee.tasks_completed.serve, employee.tasks_completed.clear, employee.tasks_completed.clean, "收尾时间已到；可以开始新的一天。" if result.elapsed >= Model.DAY_SECONDS + Model.CLOSING_GRACE else "今日营业已完成。"]
+	management_panel.hide()
 	summary_panel.show()
 
 
 func _toggle_pause() -> void:
 	if reset_dialog.visible or model.ended: return
 	get_tree().paused = not get_tree().paused
+	management_panel.hide()
 	if is_instance_valid(cooking_screen): cooking_screen.clear_heat()
 	pause_panel.visible = get_tree().paused
 
@@ -385,6 +421,40 @@ func _open_reset() -> void:
 	if is_instance_valid(cooking_screen): cooking_screen.clear_heat()
 	get_tree().paused = true
 	reset_dialog.popup_centered()
+
+
+func _toggle_management() -> void:
+	if model.ended or is_instance_valid(cooking_screen): return
+	management_panel.visible = not management_panel.visible
+	_refresh_employee_panel()
+
+
+func _toggle_employee() -> void:
+	employee.enabled = not employee.enabled
+	_refresh_employee_panel()
+
+
+func _toggle_employee_work(kind: String) -> void:
+	employee.toggle_work(kind)
+	_refresh_employee_panel()
+
+
+func _move_employee_priority(kind: String) -> void:
+	employee.move_priority_up(kind)
+	_refresh_employee_panel()
+
+
+func _refresh_employee_panel() -> void:
+	if management_panel == null: return
+	for i in range(employee.priority.size()):
+		var kind: String = employee.priority[i]
+		var row_y := 139 + i * 57
+		work_buttons["label_" + kind].position.y = row_y
+		work_buttons["toggle_" + kind].position.y = row_y
+		work_buttons["up_" + kind].position.y = row_y
+		work_buttons["label_" + kind].text = "%d  %s" % [i + 1, employee.WORK_LABELS[kind]]
+		work_buttons["toggle_" + kind].text = "开启" if employee.work_enabled[kind] else "关闭"
+		work_buttons["up_" + kind].disabled = i == 0
 
 
 func _show_feedback(message: String) -> void:
@@ -441,9 +511,14 @@ func _child_label(parent: Node, value: String, at: Vector2, dimensions: Vector2,
 
 
 func _button(parent: Node, value: String, rect: Rect2, callback: Callable) -> void:
+	_make_button(parent, value, rect, callback)
+
+
+func _make_button(parent: Node, value: String, rect: Rect2, callback: Callable) -> Button:
 	var button := Button.new()
 	button.text = value
 	button.position = rect.position
 	button.size = rect.size
 	button.pressed.connect(callback)
 	parent.add_child(button)
+	return button

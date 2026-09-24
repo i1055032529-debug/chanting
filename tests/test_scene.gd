@@ -18,6 +18,7 @@ func check(value: bool, message: String) -> void:
 func _run() -> void:
 	game = Restaurant.instantiate()
 	root.add_child(game)
+	game.employee.enabled = false
 	await process_frame
 	check(game.player != null and game.stations.size() == 7, "four tables and three workstations created")
 	check(not game.try_interact("stove"), "distant interaction rejected")

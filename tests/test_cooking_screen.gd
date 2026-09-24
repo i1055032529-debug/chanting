@@ -24,6 +24,7 @@ func key(code: Key, down: bool = true) -> void:
 func _run() -> void:
 	var game = preload("res://scenes/restaurant.tscn").instantiate()
 	root.add_child(game)
+	game.employee.enabled = false
 	await process_frame
 	game.model.request_customer()
 	for i in range(3): game.customers[1]._process(10.0)

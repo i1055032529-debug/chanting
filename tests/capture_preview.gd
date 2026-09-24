@@ -7,6 +7,7 @@ func _initialize() -> void:
 func _capture() -> void:
 	var game := preload("res://scenes/restaurant.tscn").instantiate()
 	root.add_child(game)
+	game.employee.enabled = false
 	await process_frame
 	for n in range(4): game.model.request_customer()
 	for customer in game.customers.values():
