@@ -20,7 +20,7 @@ func _run() -> void:
 	root.add_child(game)
 	game.employee.enabled = false
 	await process_frame
-	check(game.player != null and game.stations.size() == 7, "four tables and three workstations created")
+	check(game.player != null and game.stations.size() == 8, "four tables and four workstations created")
 	check(not game.try_interact("stove"), "distant interaction rejected")
 	check(game.model.request_customer() and game.model.request_customer(), "two customers reserve tables")
 	for customer in game.customers.values():
@@ -54,6 +54,22 @@ func _run() -> void:
 	check(game.stations.has("stain_999"), "world displays bounded stain job")
 	game.player.position = game.target_position("stain_999")
 	check(game.try_interact("stain_999") and game.model.stains.is_empty(), "player cleans visible stain")
+	game.reset_run()
+	check(game.stations.has("stove_2") and game.target_position("stove").distance_to(game.target_position("stove_2")) > 100.0, "both cooking positions are separately reachable")
+	game.model.request_customer()
+	game.model.request_customer()
+	var simultaneous_ids: Array = game.model.orders.keys()
+	simultaneous_ids.sort()
+	for id in simultaneous_ids: game.model.seat_customer(id)
+	var employee_id: int = simultaneous_ids[0]
+	var player_id: int = simultaneous_ids[1]
+	check(game.model.claim_task("cook", employee_id, "employee", "stove") and game.model.start_cooking_as(employee_id, "employee"), "employee cooks at first position")
+	game.model.selected_order_id = player_id
+	game.player.position = game.target_position("stove_2")
+	check(game.try_interact("stove_2") and game.cooking_screen.order_id == player_id, "player opens minigame at second position while employee cooks")
+	game.model.orders[employee_id].waited = Day.PATIENCE - 1.0
+	game.model.advance(2.0)
+	check(is_instance_valid(game.cooking_screen) and game.model.orders[player_id].state == "cooking", "employee order timeout does not close player's minigame")
 	game.reset_run()
 	game.model.request_customer()
 	for i in range(3): game.customers[game.model.next_order_id - 1]._process(10.0)

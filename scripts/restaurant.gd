@@ -78,8 +78,14 @@ func _process(delta: float) -> void:
 	labels.toast.text = toast if toast_time > 0.0 else _next_step()
 	for id: String in stations:
 		stations[id].set_highlight(id == nearest)
-	stations.pass.show_item(model.pass_order_id != 0)
-	stations.pass.item.modulate = Model.RECIPES[model.orders[model.pass_order_id].recipe].color if model.pass_order_id != 0 and model.orders.has(model.pass_order_id) else Color.WHITE
+	var pass_items: Array[Sprite2D] = [stations.pass.item, stations.pass.get_node("ItemMount/Item2")]
+	for i in range(Model.PASS_CAPACITY):
+		var meal := pass_items[i]
+		meal.visible = i < model.pass_order_ids.size()
+		if meal.visible:
+			var food_id: int = model.pass_order_ids[i]
+			meal.modulate = Model.RECIPES[model.orders[food_id].recipe].color if model.orders.has(food_id) else Color.WHITE
+	stations.pass.caption.text = "出餐台 %d/%d" % [model.pass_order_ids.size(), Model.PASS_CAPACITY]
 	for i in range(Model.TABLE_COUNT):
 		var table = stations["table_%d" % (i + 1)]
 		var order_id: int = model.tables[i]
@@ -99,7 +105,7 @@ func _process(delta: float) -> void:
 		cooking_screen.labels.world.text = "餐厅继续营业
 " + "
 ".join(lines)
-	debug_label.text = "时间 %.1f / %.1f\n订单 %s\n在场 %d  污渍 %d\n选中 #%d  炉灶 #%d  出餐 #%d" % [model.elapsed, Model.DAY_SECONDS, str(model.orders), customers.size(), model.stains.size(), model.selected_order_id, model.cooking_order_id, model.pass_order_id]
+	debug_label.text = "时间 %.1f / %.1f\n订单 %s\n在场 %d  污渍 %d\n选中 #%d  炉灶 %s  出餐 %s" % [model.elapsed, Model.DAY_SECONDS, str(model.orders), customers.size(), model.stains.size(), model.selected_order_id, str(model.cook_stations), str(model.pass_order_ids)]
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -204,6 +210,7 @@ func _build_room() -> void:
 		stations[table.station_id] = table
 	for id: String in ["stove", "pass", "sink"]:
 		stations[id] = actors.get_node(id.capitalize())
+	stations["stove_2"] = actors.get_node("Stove2")
 	employee = EmployeeScene.instantiate()
 	employee.position = Vector2(375, 570)
 	employee.configure(model, stations)
@@ -269,8 +276,8 @@ func _open_cooking(id: int, attempt: int, recipe_id: String) -> void:
 	cooking_layer.add_child(cooking_screen)
 
 
-func _expire_cooking(_id: int) -> void:
-	if is_instance_valid(cooking_screen):
+func _expire_cooking(id: int) -> void:
+	if is_instance_valid(cooking_screen) and cooking_screen.order_id == id:
 		_close_cooking()
 		_show_feedback("顾客等餐超时，本次烹饪已自动结束。")
 
@@ -337,7 +344,7 @@ func _build_ui() -> void:
 		work_buttons["toggle_" + row_kind] = toggle
 		var up_button := _make_button(management_panel, "↑ 优先", Rect2(336, row_y, 89, 32), func(): _move_employee_priority(row_kind))
 		work_buttons["up_" + row_kind] = up_button
-	_child_label(management_panel, "员工无需手动做菜，但会占用炉灶和出餐位。", Vector2(20, 370), Vector2(420, 24), 13, MUTED)
+	_child_label(management_panel, "双炉灶可同时做菜；主角可接手员工尚未开始的任务。", Vector2(20, 370), Vector2(420, 24), 13, MUTED)
 	pause_panel = _panel(Rect2(425, 270, 430, 260), Color("38291f"))
 	pause_panel.visible = false
 	pause_panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -471,7 +478,7 @@ func _next_step() -> String:
 
 
 func _action_hint(id: String) -> String:
-	if id == "stove": return "制作选中订单"
+	if id in Model.STOVES: return "制作选中订单"
 	if id == "pass": return "取餐 / 放回"
 	if id == "sink": return "回收餐盘"
 	if id.begins_with("table_"):

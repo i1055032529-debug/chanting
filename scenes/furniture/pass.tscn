@@ -66,5 +66,12 @@ position = Vector2(0, -55)
 
 [node name="Item" type="Sprite2D" parent="ItemMount"]
 visible = false
+position = Vector2(-20, 0)
+texture = ExtResource("3")
+hframes = 2
+
+[node name="Item2" type="Sprite2D" parent="ItemMount"]
+visible = false
+position = Vector2(20, 0)
 texture = ExtResource("3")
 hframes = 2

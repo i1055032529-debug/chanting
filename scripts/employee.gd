@@ -82,7 +82,7 @@ func _choose_job() -> void:
 		if not is_equal_approx(a.urgency, b.urgency): return a.urgency > b.urgency
 		return a.distance < b.distance)
 	for candidate in choices:
-		if not model.claim_task(candidate.kind, candidate.id, "employee"): continue
+		if not model.claim_task(candidate.kind, candidate.id, "employee", candidate.get("station", "")): continue
 		job = candidate
 		stage = "moving"
 		status = "%s · %02d 号桌" % [WORK_LABELS[job.kind], job.table + 1]
@@ -93,7 +93,7 @@ func _choose_job() -> void:
 
 func _first_target(task: Dictionary) -> String:
 	match task.kind:
-		"cook": return "stove"
+		"cook": return task.station
 		"serve": return "pass"
 		"clear": return "table_%d" % (task.table + 1)
 		"clean": return "stain_%d" % task.id
@@ -152,7 +152,7 @@ func _arrived() -> void:
 			status = "正在制作%s" % model.recipe_name(cook_rules.recipe_id)
 		"serve":
 			if stage == "moving":
-				if not model.interact_as("employee", "pass"):
+				if not model.interact_as("employee", "pass", id):
 					_finish_invalid()
 					return
 				stage = "delivering"
@@ -185,7 +185,7 @@ func _cook(delta: float) -> void:
 	if cook_rules.state == CookingRules.State.RUNNING and cook_rules.doneness >= 98.0: cook_rules.plate()
 	if cook_rules.state == CookingRules.State.RESULT:
 		var id: int = job.id
-		var attempt: int = model.cooking_attempt_id
+		var attempt: int = model.orders[id].cook_attempt if model.orders.has(id) else 0
 		if cook_rules.result.success and model.complete_cooking(id, attempt, cook_rules.result):
 			_finish_job()
 		else:
@@ -205,13 +205,14 @@ func _finish_job() -> void:
 
 
 func _finish_invalid() -> void:
+	var transferred: bool = not job.is_empty() and job.kind != "discard" and model.task_owner(job.kind, job.id) != "employee"
 	if not job.is_empty() and job.kind != "discard":
-		model.abort_employee_job(job.kind, job.id, "订单已失效")
+		if not transferred: model.abort_employee_job(job.kind, job.id, "订单已失效")
 	job.clear()
 	stage = "idle"
 	route = PackedVector2Array()
 	route_index = 0
-	status = "任务失效，重新排班"
+	status = "任务已更新，重新安排" if transferred else "任务失效，重新排班"
 
 
 func _begin_discard() -> void:

@@ -67,6 +67,10 @@ func _run() -> void:
 	game.employee._physics_process(0.1)
 	check(not game.employee.job.is_empty(), "turning off a work type does not interrupt current job")
 	game.employee.work_enabled.cook = true
+	game.player.position = game.target_position("stove")
+	check(game.try_interact("stove") and game.model.task_owner("cook", disabled_id) == "player", "player takes cook job while employee is travelling")
+	game.employee._physics_process(0.1)
+	check(game.employee.job.is_empty() and game.model.orders[disabled_id].state == "cooking", "displaced employee leaves player cooking intact")
 	game.reset_run()
 	var stove_position: Vector2 = game.stations.stove.position
 	game.stations.stove.position = Vector2(5, 5)

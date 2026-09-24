@@ -12,6 +12,8 @@ signal day_finished(summary: Dictionary)
 
 enum Carry { NONE, FOOD, PLATE }
 const TABLE_COUNT := 4
+const STOVES := ["stove", "stove_2"]
+const PASS_CAPACITY := 2
 const DAY_SECONDS := 180.0
 const CLOSING_GRACE := 35.0
 const PATIENCE := 48.0
@@ -43,6 +45,7 @@ var selected_order_id := 0
 var orders: Dictionary = {}
 var tables: Array[int] = [0, 0, 0, 0]
 var pass_order_id := 0
+var pass_order_ids: Array[int] = []
 var carrying: Carry = Carry.NONE
 var carried_order_id := 0
 var carried_table_id := -1
@@ -55,6 +58,8 @@ var reviews: Array[Dictionary] = []
 var wait_records: Array[float] = []
 # A task is reserved before either actor walks to it. Keys are stable per order/stain.
 var task_owners: Dictionary = {}
+var task_active: Dictionary = {}
+var cook_stations: Dictionary = {}
 var employee_carrying: Carry = Carry.NONE
 var employee_carried_order_id := 0
 var employee_carried_table_id := -1
@@ -158,15 +163,13 @@ func task_owner(kind: String, id: int) -> String:
 	return task_owners.get(task_key(kind, id), "")
 
 
-func task_available(kind: String, id: int) -> bool:
+func task_available(kind: String, id: int, station: String = "") -> bool:
 	if ended or task_owner(kind, id) != "": return false
 	match kind:
 		"cook":
-			if not orders.has(id) or orders[id].state != "waiting" or cooking_order_id != 0 or pass_order_id != 0: return false
-			for key: String in task_owners:
-				if key.begins_with("cook:"): return false
-			return true
-		"serve": return orders.has(id) and orders[id].state == "ready" and pass_order_id == id
+			if not orders.has(id) or orders[id].state != "waiting" or _output_occupancy() >= PASS_CAPACITY: return false
+			return _free_stove(station) != ""
+		"serve": return orders.has(id) and orders[id].state == "ready" and id in pass_order_ids
 		"clear": return orders.has(id) and orders[id].state == "dirty"
 		"clean":
 			for stain in stains:
@@ -174,12 +177,25 @@ func task_available(kind: String, id: int) -> bool:
 	return false
 
 
-func claim_task(kind: String, id: int, actor: String) -> bool:
+func claim_task(kind: String, id: int, actor: String, station: String = "") -> bool:
 	if actor not in ["player", "employee"]: return false
-	if not task_available(kind, id): return false
 	if actor == "player" and carrying != Carry.NONE: return false
 	if actor == "employee" and employee_carrying != Carry.NONE: return false
-	task_owners[task_key(kind, id)] = actor
+	var key := task_key(kind, id)
+	var owner := task_owner(kind, id)
+	if owner != "":
+		if actor != "player" or owner != "employee" or task_active.get(key, false): return false
+		if kind == "cook":
+			if not orders.has(id) or orders[id].state != "waiting": return false
+			if station != "" and station != cook_stations.get(id, ""):
+				if _free_stove(station) == "": return false
+				cook_stations[id] = station
+		elif not _task_still_possible(kind, id): return false
+	else:
+		if not task_available(kind, id, station): return false
+		if kind == "cook": cook_stations[id] = _free_stove(station)
+	task_owners[key] = actor
+	task_active[key] = false
 	changed.emit()
 	return true
 
@@ -189,7 +205,45 @@ func release_task(kind: String, id: int, actor: String = "") -> void:
 	if not task_owners.has(key): return
 	if actor != "" and task_owners[key] != actor: return
 	task_owners.erase(key)
+	task_active.erase(key)
+	if kind == "cook": cook_stations.erase(id)
 	changed.emit()
+
+
+func _task_still_possible(kind: String, id: int) -> bool:
+	match kind:
+		"serve": return orders.has(id) and orders[id].state == "ready" and id in pass_order_ids
+		"clear": return orders.has(id) and orders[id].state == "dirty"
+		"clean":
+			for stain in stains:
+				if stain.id == id: return true
+	return false
+
+
+func _free_stove(preferred: String = "") -> String:
+	var choices := [preferred] if preferred != "" else STOVES
+	for station in choices:
+		if station not in STOVES: continue
+		if station not in cook_stations.values(): return station
+	return ""
+
+
+func _output_occupancy() -> int:
+	return pass_order_ids.size() + cook_stations.size()
+
+
+func _sync_pass_primary() -> void:
+	pass_order_id = pass_order_ids[0] if not pass_order_ids.is_empty() else 0
+
+
+func _sync_cooking_primary() -> void:
+	cooking_order_id = 0
+	cooking_attempt_id = 0
+	for id: int in cook_stations:
+		if orders.has(id) and orders[id].state == "cooking":
+			cooking_order_id = id
+			cooking_attempt_id = orders[id].cook_attempt
+			return
 
 
 func available_tasks() -> Array[Dictionary]:
@@ -198,59 +252,59 @@ func available_tasks() -> Array[Dictionary]:
 		var order: Dictionary = orders[id]
 		for kind in ["serve", "clear", "cook"]:
 			if task_available(kind, id):
-				found.append({"kind": kind, "id": id, "table": order.table, "urgency": order.waited / PATIENCE if kind != "clear" else 0.0})
+				found.append({"kind": kind, "id": id, "table": order.table, "urgency": order.waited / PATIENCE if kind != "clear" else 0.0, "station": _free_stove() if kind == "cook" else ""})
 	for stain in stains:
 		if task_available("clean", stain.id):
 			found.append({"kind": "clean", "id": stain.id, "table": stain.table, "urgency": float(stains.size()) / STAIN_LIMIT})
 	return found
 
 
-func start_cooking() -> bool:
+func start_cooking(station: String = "stove") -> bool:
 	if carrying != Carry.NONE: return _reject("双手已占用，先交付手中物品。")
 	var id := selected_order_id
 	if not orders.has(id) or orders[id].state != "waiting": id = most_urgent_waiting()
 	if id == 0: return _reject("当前没有等待制作的订单。")
-	if not claim_task("cook", id, "player"):
-		return _reject("炉灶或出餐位已被占用，或这份订单已被员工领取。")
+	if not claim_task("cook", id, "player", station):
+		return _reject("这个炉灶已在做菜，或两个出餐位都已安排菜品。")
 	return start_cooking_as(id, "player")
 
 
 func start_cooking_as(id: int, actor: String) -> bool:
-	if task_owner("cook", id) != actor or cooking_order_id != 0 or pass_order_id != 0 or not orders.has(id) or orders[id].state != "waiting":
+	if task_owner("cook", id) != actor or not cook_stations.has(id) or not orders.has(id) or orders[id].state != "waiting":
 		return false
-	selected_order_id = id
-	cooking_order_id = id
-	cooking_attempt_id = next_attempt_id
+	if actor == "player": selected_order_id = id
+	var attempt := next_attempt_id
 	next_attempt_id += 1
 	orders[id].state = "cooking"
-	orders[id].cook_attempt = cooking_attempt_id
-	if actor == "player": cooking_requested.emit(id, cooking_attempt_id, orders[id].recipe)
+	orders[id].cook_attempt = attempt
+	task_active[task_key("cook", id)] = true
+	_sync_cooking_primary()
+	if actor == "player": cooking_requested.emit(id, attempt, orders[id].recipe)
 	changed.emit()
 	return true
 
 
 func complete_cooking(id: int, attempt: int, result: Dictionary) -> bool:
-	if cooking_order_id != id or cooking_attempt_id != attempt or not orders.has(id) or pass_order_id != 0: return false
+	if not orders.has(id) or not cook_stations.has(id) or orders[id].cook_attempt != attempt or pass_order_ids.size() >= PASS_CAPACITY: return false
 	if orders[id].state != "cooking" or not result.get("success", false) or result.get("doneness", 0.0) < CookingRules.MIN_DONENESS or result.get("burn", 100.0) >= CookingRules.BURN_LIMIT: return false
 	orders[id].score = result.get("score", 0)
 	orders[id].bonus = CookingRules.bonus_for_result(result)
 	orders[id].state = "ready"
-	pass_order_id = id
-	cooking_order_id = 0
-	cooking_attempt_id = 0
+	pass_order_ids.append(id)
+	_sync_pass_primary()
 	release_task("cook", id)
+	_sync_cooking_primary()
 	feedback.emit("%02d 号桌的%s已出锅，去出餐台取餐。" % [orders[id].table + 1, recipe_name(orders[id].recipe)])
 	changed.emit()
 	return true
 
 
 func cancel_cooking(id: int, attempt: int) -> bool:
-	if cooking_order_id != id or cooking_attempt_id != attempt or not orders.has(id): return false
+	if not orders.has(id) or not cook_stations.has(id) or orders[id].cook_attempt != attempt: return false
 	if orders[id].state != "cooking": return false
 	orders[id].state = "waiting"
-	cooking_order_id = 0
-	cooking_attempt_id = 0
 	release_task("cook", id)
+	_sync_cooking_primary()
 	feedback.emit("本次烹饪已取消，订单仍在。")
 	changed.emit()
 	return true
@@ -260,31 +314,34 @@ func interact(target: String) -> bool:
 	return interact_as("player", target)
 
 
-func interact_as(actor: String, target: String) -> bool:
+func interact_as(actor: String, target: String, target_order_id: int = 0) -> bool:
 	if actor not in ["player", "employee"] or ended: return false
-	if target == "stove":
-		return start_cooking() if actor == "player" else false
+	if target in STOVES:
+		return start_cooking(target) if actor == "player" else false
 	var held: Carry = carrying if actor == "player" else employee_carrying
 	var held_id: int = carried_order_id if actor == "player" else employee_carried_order_id
 	if target == "pass":
 		if held == Carry.FOOD:
 			if actor == "employee": return false
-			if pass_order_id != 0: return _reject("出餐台已有食物。")
+			if pass_order_ids.size() >= PASS_CAPACITY: return _reject("出餐台已放满食物。")
 			if not orders.has(held_id) or orders[held_id].state != "carried": return _reject("这份菜已失效。")
-			pass_order_id = held_id
+			pass_order_ids.append(held_id)
+			_sync_pass_primary()
 			orders[held_id].state = "ready"
 			_set_actor_carry(actor, Carry.NONE, 0, -1)
 			release_task("serve", held_id, actor)
 			changed.emit()
 			return true
 		if held != Carry.NONE: return _reject("先把餐盘送到回收台。")
-		var id := pass_order_id
-		if id == 0 or not orders.has(id): return _reject("出餐台暂无可取的食物。")
-		if task_owner("serve", id) == "":
+		var id := target_order_id if target_order_id != 0 else pass_order_id
+		if id == 0 or id not in pass_order_ids or not orders.has(id): return _reject("出餐台暂无可取的食物。")
+		if task_owner("serve", id) != actor:
 			if not claim_task("serve", id, actor): return false
 		if task_owner("serve", id) != actor: return _reject("这份菜已由员工领取，正在上菜。")
-		pass_order_id = 0
+		pass_order_ids.erase(id)
+		_sync_pass_primary()
 		orders[id].state = "carried"
+		task_active[task_key("serve", id)] = true
 		_set_actor_carry(actor, Carry.FOOD, id, -1)
 		changed.emit()
 		return true
@@ -318,17 +375,18 @@ func interact_as(actor: String, target: String) -> bool:
 			return true
 		if held != Carry.NONE: return _reject("请先回收手中的餐盘。")
 		if order.state != "dirty": return _reject("这张桌子尚不需要收盘。")
-		if task_owner("clear", id) == "":
+		if task_owner("clear", id) != actor:
 			if not claim_task("clear", id, actor): return false
 		if task_owner("clear", id) != actor: return _reject("员工已领取收盘任务。")
 		order.state = "clearing"
+		task_active[task_key("clear", id)] = true
 		_set_actor_carry(actor, Carry.PLATE, 0, table_id)
 		changed.emit()
 		return true
 	if target.begins_with("stain_"):
 		if held != Carry.NONE: return _reject("先放下手中的物品，再清洁地面。")
 		var stain_id := target.trim_prefix("stain_").to_int()
-		if task_owner("clean", stain_id) == "":
+		if task_owner("clean", stain_id) != actor:
 			if not claim_task("clean", stain_id, actor): return false
 		if task_owner("clean", stain_id) != actor: return _reject("员工正在清洁这处污渍。")
 		for i in range(stains.size()):
@@ -353,12 +411,13 @@ func discard_employee_food() -> bool:
 
 func abort_employee_job(kind: String, id: int, reason: String) -> void:
 	# Recovery always releases the reservation and any object in the employee's hands.
-	if kind == "cook" and cooking_order_id == id and orders.has(id):
-		cancel_cooking(id, cooking_attempt_id)
+	if kind == "cook" and cook_stations.has(id) and orders.has(id) and orders[id].state == "cooking":
+		cancel_cooking(id, orders[id].cook_attempt)
 	elif kind == "serve" and employee_carrying == Carry.FOOD and employee_carried_order_id == id:
-		if orders.has(id) and orders[id].state == "carried" and pass_order_id == 0:
+		if orders.has(id) and orders[id].state == "carried" and pass_order_ids.size() < PASS_CAPACITY:
 			orders[id].state = "ready"
-			pass_order_id = id
+			pass_order_ids.append(id)
+			_sync_pass_primary()
 		elif orders.has(id) and orders[id].state == "carried":
 			_timeout(id)
 		_set_actor_carry("employee", Carry.NONE, 0, -1)
@@ -421,6 +480,7 @@ func reset() -> void:
 	orders.clear()
 	tables = [0, 0, 0, 0]
 	pass_order_id = 0
+	pass_order_ids.clear()
 	carrying = Carry.NONE
 	carried_order_id = 0
 	carried_table_id = -1
@@ -428,6 +488,8 @@ func reset() -> void:
 	cooking_attempt_id = 0
 	stains.clear()
 	task_owners.clear()
+	task_active.clear()
+	cook_stations.clear()
 	employee_carrying = Carry.NONE
 	employee_carried_order_id = 0
 	employee_carried_table_id = -1
@@ -441,17 +503,17 @@ func _timeout(id: int) -> void:
 	if not orders.has(id): return
 	var order: Dictionary = orders[id]
 	if order.state not in ["waiting", "cooking", "ready", "carried"]: return
+	var was_cooking: bool = order.state == "cooking" and cook_stations.has(id)
 	order.state = "leaving_lost"
 	lost += 1
 	bad_reviews += 1
 	wait_records.append(minf(order.waited, PATIENCE))
 	reviews.append({"table": order.table + 1, "good": false, "reason": "等餐超时"})
-	if cooking_order_id == id:
-		cooking_order_id = 0
-		cooking_attempt_id = 0
-		cooking_expired.emit(id)
 	for kind in ["cook", "serve", "clear"]: release_task(kind, id)
-	if pass_order_id == id: pass_order_id = 0
+	_sync_cooking_primary()
+	if was_cooking: cooking_expired.emit(id)
+	pass_order_ids.erase(id)
+	_sync_pass_primary()
 	if carrying == Carry.FOOD and carried_order_id == id:
 		carrying = Carry.NONE
 		carried_order_id = 0
@@ -511,6 +573,12 @@ func _finish_day() -> void:
 	if ended: return
 	ended = true
 	task_owners.clear()
+	task_active.clear()
+	cook_stations.clear()
+	pass_order_ids.clear()
+	pass_order_id = 0
+	cooking_order_id = 0
+	cooking_attempt_id = 0
 	employee_carrying = Carry.NONE
 	employee_carried_order_id = 0
 	employee_carried_table_id = -1

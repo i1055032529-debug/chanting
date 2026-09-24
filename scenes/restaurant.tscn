@@ -43,7 +43,11 @@ shape = SubResource("Register")
 [node name="World" type="Node2D" parent="."]
 y_sort_enabled = true
 [node name="Stove" parent="World" instance=ExtResource("4")]
-position = Vector2(700, 384)
+position = Vector2(635, 384)
+[node name="Stove2" parent="World" instance=ExtResource("4")]
+position = Vector2(765, 384)
+station_id = "stove_2"
+display_name = "烹饪台 2"
 [node name="Pass" parent="World" instance=ExtResource("5")]
 position = Vector2(900, 384)
 [node name="Sink" parent="World" instance=ExtResource("6")]
