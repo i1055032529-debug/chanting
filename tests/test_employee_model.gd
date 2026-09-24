@@ -20,6 +20,7 @@ func ready_order(model, id: int) -> void:
 
 func active_day():
 	var model = Day.new()
+	model.set_employee_hired(true)
 	model.start_day()
 	return model
 

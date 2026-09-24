@@ -41,7 +41,7 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if model == null or model.phase != "open" or model.ended: return
+	if model == null or model.phase != "open" or model.ended or not model.employee_attending: return
 	clock += delta
 	if grid == null: _build_grid()
 	if model.employee_carrying == model.Carry.FOOD and (not model.orders.has(model.employee_carried_order_id) or model.orders[model.employee_carried_order_id].state != "carried"):

@@ -58,6 +58,7 @@ func _run() -> void:
 	game.player.position = game.target_position("stain_999")
 	check(game.try_interact("stain_999") and game.model.stains.is_empty(), "player cleans visible stain")
 	game.reset_run()
+	game.model.set_employee_hired(true)
 	game.start_day()
 	check(game.stations.has("stove_2") and game.target_position("stove").distance_to(game.target_position("stove_2")) > 100.0, "both cooking positions are separately reachable")
 	game.model.request_customer()

@@ -35,6 +35,7 @@ func _run() -> void:
 	scarce.set_menu_enabled("noodles", false)
 	scarce.set_menu_enabled("tomato_egg", false)
 	scarce.set_menu_enabled("egg_noodles", false)
+	scarce.set_employee_hired(true)
 	check(scarce.start_day(), "scarce pantry can open with two portions")
 	check(scarce.request_customer() and scarce.request_customer(), "first two simultaneous orders reserve the only portions")
 	check(scarce.request_customer() and scarce.orders.size() == 2 and scarce.browsers.has(3) and scarce.reserved_inventory.rice == 2, "unavailable third choice browses without overbooking stock")

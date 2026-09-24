@@ -20,6 +20,7 @@ func _simulate(with_employee: bool) -> Dictionary:
 	root.add_child(game)
 	await physics_frame
 	await process_frame
+	if with_employee: game.model.set_employee_hired(true)
 	game.employee.enabled = with_employee
 	game.start_day()
 	var next_manual := 0.0

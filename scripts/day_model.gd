@@ -17,6 +17,7 @@ const STOVES := ["stove", "stove_2"]
 const PASS_CAPACITY := 2
 const EXPENSE_KINDS := ["purchase", "wages", "furniture", "equipment", "expansion"]
 const STARTING_CASH := 30
+const DAILY_WAGE := 18
 const INGREDIENTS := {
 	"rice": {"name": "米饭", "price": 2, "starting": 8},
 	"egg": {"name": "鸡蛋", "price": 3, "starting": 8},
@@ -52,6 +53,9 @@ var elapsed := 0.0
 var day_closed := false
 var ended := false
 var coins := STARTING_CASH
+var employee_hired := false
+var employee_attending := false
+var wage_reserved := 0
 var inventory: Dictionary = {}
 var reserved_inventory: Dictionary = {}
 var menu_enabled := {"rice": true, "noodles": true, "tomato_egg": true, "egg_noodles": true}
@@ -109,6 +113,23 @@ func _reset_inventory() -> void:
 func ingredient_available(id: String) -> int:
 	if not INGREDIENTS.has(id): return 0
 	return maxi(0, inventory[id] - reserved_inventory[id])
+
+
+func spendable_cash() -> int:
+	return maxi(0, coins - wage_reserved) if phase == "preopen" else coins
+
+
+func set_employee_hired(hired: bool) -> bool:
+	if phase != "preopen" or employee_hired == hired: return false
+	employee_hired = hired
+	_refresh_wage_reservation()
+	feedback.emit("已雇佣员工，预留今日工资 %d 金币。" % wage_reserved if hired and wage_reserved > 0 else "已雇佣员工，但资金不足，今天无法出勤。" if hired else "已停止雇佣员工，工资预留已释放。")
+	changed.emit()
+	return true
+
+
+func _refresh_wage_reservation() -> void:
+	wage_reserved = DAILY_WAGE if phase == "preopen" and employee_hired and coins >= DAILY_WAGE else 0
 
 
 func portions_available(recipe_id: String) -> int:
@@ -206,7 +227,7 @@ func emergency_available() -> bool:
 			var required: int = RECIPES[recipe_id].ingredients[ingredient]
 			missing_cost += maxi(0, required - ingredient_available(ingredient)) * int(INGREDIENTS[ingredient].price)
 		cheapest_completion = mini(cheapest_completion, missing_cost)
-	return coins < cheapest_completion
+	return spendable_cash() < cheapest_completion
 
 
 func claim_emergency_supply() -> bool:
@@ -426,6 +447,7 @@ func task_available(kind: String, id: int, station: String = "") -> bool:
 func claim_task(kind: String, id: int, actor: String, station: String = "") -> bool:
 	if phase != "open": return false
 	if actor not in ["player", "employee"]: return false
+	if actor == "employee" and not employee_attending: return false
 	if actor == "player" and carrying != Carry.NONE: return false
 	if actor == "employee" and employee_carrying != Carry.NONE: return false
 	var key := task_key(kind, id)
@@ -568,6 +590,7 @@ func interact(target: String) -> bool:
 
 func interact_as(actor: String, target: String, target_order_id: int = 0) -> bool:
 	if actor not in ["player", "employee"] or phase != "open" or ended: return false
+	if actor == "employee" and not employee_attending: return false
 	if target in STOVES:
 		return start_cooking(target) if actor == "player" else false
 	var held: Carry = carrying if actor == "player" else employee_carrying
@@ -724,8 +747,9 @@ func start_day() -> bool:
 	for recipe_id: String in RECIPE_IDS:
 		if menu_enabled[recipe_id] and portions_available(recipe_id) > 0: can_serve = true
 	if not can_serve: return _reject("没有可制作的在售菜品；请采购食材、调整菜单或领取应急补给。")
+	employee_attending = employee_hired and wage_reserved == DAILY_WAGE
 	phase = "open"
-	feedback.emit("第 %d 天营业开始。" % day_number)
+	feedback.emit("第 %d 天营业开始；工资不足，员工今日不出勤。" % day_number if employee_hired and not employee_attending else "第 %d 天营业开始。" % day_number)
 	changed.emit()
 	return true
 
@@ -738,6 +762,7 @@ func next_day() -> bool:
 	transaction_keys.clear()
 	_clear_day()
 	phase = "preopen"
+	_refresh_wage_reservation()
 	changed.emit()
 	return true
 
@@ -745,6 +770,9 @@ func next_day() -> bool:
 func new_game() -> void:
 	day_number = 1
 	coins = STARTING_CASH
+	employee_hired = false
+	employee_attending = false
+	wage_reserved = 0
 	day_opening_cash = STARTING_CASH
 	_reset_inventory()
 	menu_enabled = {"rice": true, "noodles": true, "tomato_egg": true, "egg_noodles": true}
@@ -763,7 +791,8 @@ func reset() -> void:
 
 
 func spend(kind: String, amount: int, reference: String) -> bool:
-	if kind not in EXPENSE_KINDS or amount <= 0 or phase not in ["preopen", "summary"]: return false
+	if kind not in EXPENSE_KINDS or kind == "wages" or amount <= 0 or phase not in ["preopen", "summary"]: return false
+	if phase == "preopen" and coins - amount < wage_reserved: return false
 	return _post_transaction(kind, -amount, reference)
 
 
@@ -789,6 +818,7 @@ func _clear_day() -> void:
 	ended = false
 	served = 0
 	lost = 0
+	employee_attending = false
 	no_sale = 0
 	missing_first_choices.clear()
 	price_refusals = 0
@@ -899,6 +929,9 @@ func _finish_if_clear() -> void:
 
 func _finish_day() -> void:
 	if ended: return
+	if employee_attending:
+		_post_transaction("wages", -DAILY_WAGE, "wages:%d" % day_number)
+	wage_reserved = 0
 	ended = true
 	phase = "summary"
 	task_owners.clear()

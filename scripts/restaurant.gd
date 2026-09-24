@@ -37,6 +37,8 @@ var purchase_quantities := {"rice": 1, "egg": 1, "noodles": 1, "tomato": 1}
 var summary_panel: Panel
 var summary_text: Label
 var management_panel: Panel
+var hire_button: Button
+var employment_label: Label
 var work_buttons: Dictionary = {}
 var reset_dialog: ConfirmationDialog
 var debug_label: Label
@@ -65,6 +67,7 @@ func _ready() -> void:
 	model.day_finished.connect(_show_summary)
 	model.changed.connect(_refresh_ui)
 	model.feedback.connect(_show_feedback)
+	_refresh_employee_presence()
 	_refresh_ui()
 
 
@@ -170,6 +173,7 @@ func reset_run() -> void:
 	model.new_game()
 	employee.reset_new_game()
 	preopen_panel.show()
+	_refresh_employee_presence()
 	_show_feedback("新游戏已建立。准备第 1 天营业。")
 	_refresh_ui()
 
@@ -180,6 +184,7 @@ func prepare_next_day() -> bool:
 	if not model.next_day(): return false
 	employee.reset_day()
 	preopen_panel.show()
+	_refresh_employee_presence()
 	_show_feedback("第 %d 天准备就绪。" % model.day_number)
 	_refresh_ui()
 	return true
@@ -190,6 +195,7 @@ func start_day() -> bool:
 	preopen_panel.hide()
 	store_panel.hide()
 	management_panel.hide()
+	_refresh_employee_presence()
 	player.locked = false
 	_refresh_ui()
 	return true
@@ -375,22 +381,24 @@ func _build_ui() -> void:
 	_label("controls", "WASD 移动  E 交互  Q 订单  M 员工  Esc 暂停", Vector2(802, 752), Vector2(457, 28), 14, MUTED)
 	debug_label = _label("debug", "", Vector2(35, 370), Vector2(640, 260), 12, CREAM)
 	debug_label.visible = false
-	management_panel = _panel(Rect2(808, 177, 445, 402), Color("30291f"))
+	management_panel = _panel(Rect2(808, 167, 445, 490), Color("30291f"))
 	management_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	management_panel.hide()
 	_child_label(management_panel, "员工工作安排", Vector2(20, 15), Vector2(300, 42), 26, GOLD)
 	_child_label(management_panel, "顺序越靠上越优先；调整后先完成手头任务。", Vector2(20, 57), Vector2(402, 32), 14, MUTED)
-	_button(management_panel, "启用 / 休息", Rect2(20, 94, 170, 32), _toggle_employee)
+	hire_button = _make_button(management_panel, "", Rect2(20, 95, 170, 32), _toggle_hire)
+	employment_label = _child_label(management_panel, "", Vector2(205, 96), Vector2(225, 29), 14, CREAM)
+	work_buttons["employee_enabled"] = _make_button(management_panel, "", Rect2(20, 137, 170, 32), _toggle_employee)
 	for i in range(4):
 		var row_kind: String = ["serve", "clear", "cook", "clean"][i]
-		var row_y := 139 + i * 57
+		var row_y := 181 + i * 57
 		var row := _child_label(management_panel, "", Vector2(20, row_y), Vector2(200, 34), 18, CREAM)
 		work_buttons["label_" + row_kind] = row
 		var toggle := _make_button(management_panel, "开 / 关", Rect2(246, row_y, 80, 32), func(): _toggle_employee_work(row_kind))
 		work_buttons["toggle_" + row_kind] = toggle
 		var up_button := _make_button(management_panel, "↑ 优先", Rect2(336, row_y, 89, 32), func(): _move_employee_priority(row_kind))
 		work_buttons["up_" + row_kind] = up_button
-	_child_label(management_panel, "双炉灶可同时做菜；主角可接手员工尚未开始的任务。", Vector2(20, 370), Vector2(420, 24), 13, MUTED)
+	_child_label(management_panel, "雇佣只在开店前调整；工资在打烊时支付一次。", Vector2(20, 437), Vector2(420, 24), 13, MUTED)
 	preopen_panel = _panel(Rect2(325, 225, 630, 350), Color("30291f"))
 	preopen_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_child_label(preopen_panel, "开店准备", Vector2(34, 24), Vector2(550, 48), 30, GOLD)
@@ -508,7 +516,7 @@ func _toggle_store() -> void:
 
 func _refresh_store_panel() -> void:
 	if store_labels.is_empty(): return
-	store_labels.overview.text = "现金 %d 金币  ·  下方列出全部菜谱、每份原料及可制作数量" % model.coins
+	store_labels.overview.text = "现金 %d · 工资预留 %d · 可采购 %d 金币" % [model.coins, model.wage_reserved, model.spendable_cash()]
 	for ingredient: String in Model.INGREDIENTS:
 		var definition: Dictionary = Model.INGREDIENTS[ingredient]
 		store_labels["stock_" + ingredient].text = "%s  单价 %d   库存 %d / 预留 %d / 可用 %d" % [definition.name, definition.price, model.inventory[ingredient], model.reserved_inventory[ingredient], model.ingredient_available(ingredient)]
@@ -516,7 +524,7 @@ func _refresh_store_panel() -> void:
 		store_labels["subtotal_" + ingredient].text = "合计 %d" % (definition.price * purchase_quantities[ingredient])
 		store_labels["minus_" + ingredient].disabled = purchase_quantities[ingredient] <= 1
 		store_labels["plus_" + ingredient].disabled = purchase_quantities[ingredient] >= 20
-		store_labels["buy_" + ingredient].disabled = definition.price * purchase_quantities[ingredient] > model.coins
+		store_labels["buy_" + ingredient].disabled = definition.price * purchase_quantities[ingredient] > model.spendable_cash()
 	for recipe_id: String in Model.RECIPE_IDS:
 		store_labels["menu_" + recipe_id].text = "%s  ·  建议 %d  ·  可做 %d 份" % [model.recipe_name(recipe_id), Model.RECIPES[recipe_id].price, model.portions_available(recipe_id)]
 		store_labels["ingredients_" + recipe_id].text = "每份：" + model.recipe_ingredients_text(recipe_id)
@@ -541,10 +549,15 @@ func _refresh_ui() -> void:
 	elif model.phase == "summary": labels.time.text = "今日结算"
 	else: labels.time.text = ("收尾 %02d:%02d" % [maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) / 60, maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) % 60]) if model.day_closed else ("营业 %02d:%02d" % [remaining / 60, remaining % 60])
 	if preopen_text != null:
-		preopen_text.text = "第 %d 天  ·  当前现金 %d 金币\n当前有 %d 道菜谱，可查看每份用料并调整售价。\n\n开店前采购食材、调整菜单；准备好后开始营业。" % [model.day_number, model.coins, Model.RECIPE_IDS.size()]
+		preopen_text.text = "第 %d 天 · 现金 %d · 工资预留 %d · 可用 %d\n%s\n\n开店前采购、调整菜单和雇佣；准备好后开始营业。" % [model.day_number, model.coins, model.wage_reserved, model.spendable_cash(), "已雇佣，今日工资不足，员工不出勤。" if model.employee_hired and model.wage_reserved == 0 else "已雇佣员工，今日可出勤。" if model.employee_hired else "尚未雇佣员工，可独自经营。"]
 	labels.clean.text = "整洁 %d%%" % [roundi((1.0 - float(model.stains.size()) / Model.STAIN_LIMIT) * 100)]
 	labels.clean.add_theme_color_override("font_color", GREEN if model.stains.size() <= 1 else RED)
-	labels.employee.text = "员工：%s%s" % [employee.status, (" · %s" % employee.failure_reason) if employee.failure_reason != "" and employee.failure_reason != employee.status else ""]
+	if model.phase == "preopen":
+		labels.employee.text = ("员工：已雇佣，工资不足" if model.wage_reserved == 0 else "员工：已雇佣，待开店") if model.employee_hired else "员工：未雇佣"
+	elif model.phase == "summary":
+		labels.employee.text = "员工：已下班" if model.employee_attending else ("员工：今日未出勤" if model.employee_hired else "员工：未雇佣")
+	else:
+		labels.employee.text = ("员工：%s%s" % [employee.status, (" · %s" % employee.failure_reason) if employee.failure_reason != "" and employee.failure_reason != employee.status else ""]) if model.employee_attending else ("员工：未出勤" if model.employee_hired else "员工：未雇佣")
 	var portions: Array[String] = []
 	for recipe_id: String in Model.RECIPE_IDS:
 		portions.append("%s %d" % [model.recipe_name(recipe_id), model.portions_available(recipe_id)])
@@ -567,6 +580,7 @@ func _refresh_ui() -> void:
 
 func _show_summary(result: Dictionary) -> void:
 	_close_cooking()
+	_refresh_employee_presence()
 	summary_text.text = _format_summary(result)
 	management_panel.hide()
 	summary_panel.show()
@@ -606,8 +620,21 @@ func _toggle_management() -> void:
 
 
 func _toggle_employee() -> void:
+	if not model.employee_hired: return
 	employee.enabled = not employee.enabled
 	_refresh_employee_panel()
+
+
+func _toggle_hire() -> void:
+	if model.set_employee_hired(not model.employee_hired):
+		_refresh_employee_presence()
+		_refresh_ui()
+	_refresh_employee_panel()
+
+
+func _refresh_employee_presence() -> void:
+	if employee == null: return
+	employee.visible = model.phase == "open" and model.employee_attending
 
 
 func _toggle_employee_work(kind: String) -> void:
@@ -624,13 +651,18 @@ func _refresh_employee_panel() -> void:
 	if management_panel == null: return
 	for i in range(employee.priority.size()):
 		var kind: String = employee.priority[i]
-		var row_y := 139 + i * 57
+		var row_y := 181 + i * 57
 		work_buttons["label_" + kind].position.y = row_y
 		work_buttons["toggle_" + kind].position.y = row_y
 		work_buttons["up_" + kind].position.y = row_y
 		work_buttons["label_" + kind].text = "%d  %s" % [i + 1, employee.WORK_LABELS[kind]]
 		work_buttons["toggle_" + kind].text = "开启" if employee.work_enabled[kind] else "关闭"
 		work_buttons["up_" + kind].disabled = i == 0
+	hire_button.text = "停止雇佣" if model.employee_hired else "雇佣员工"
+	hire_button.disabled = model.phase != "preopen"
+	work_buttons["employee_enabled"].text = "安排休息" if employee.enabled else "安排工作"
+	work_buttons["employee_enabled"].disabled = not model.employee_hired
+	employment_label.text = "日薪 %d · 预留 %d" % [Model.DAILY_WAGE, model.wage_reserved] if model.phase == "preopen" else ("今日出勤" if model.employee_attending else "今日未出勤")
 
 
 func _show_feedback(message: String) -> void:
