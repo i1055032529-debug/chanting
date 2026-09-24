@@ -360,7 +360,8 @@ func _build_ui() -> void:
 	_label("lost", "流失 0", Vector2(630, 28), Vector2(130, 29), 18, RED)
 	_label("time", "营业 03:00", Vector2(780, 22), Vector2(220, 37), 23, GOLD)
 	_label("clean", "整洁 100%", Vector2(1040, 28), Vector2(210, 30), 18, GREEN)
-	_label("employee", "员工：待命", Vector2(29, 58), Vector2(900, 25), 14, GREEN)
+	_label("employee", "员工：待命", Vector2(29, 58), Vector2(415, 25), 14, GREEN)
+	_label("capacity", "", Vector2(452, 58), Vector2(575, 25), 14, CREAM)
 	_button(ui, "M · 员工管理", Rect2(1044, 56, 208, 26), _toggle_management)
 	for i in range(Model.TABLE_COUNT):
 		var x := 26 + i * 312
@@ -544,6 +545,10 @@ func _refresh_ui() -> void:
 	labels.clean.text = "整洁 %d%%" % [roundi((1.0 - float(model.stains.size()) / Model.STAIN_LIMIT) * 100)]
 	labels.clean.add_theme_color_override("font_color", GREEN if model.stains.size() <= 1 else RED)
 	labels.employee.text = "员工：%s%s" % [employee.status, (" · %s" % employee.failure_reason) if employee.failure_reason != "" and employee.failure_reason != employee.status else ""]
+	var portions: Array[String] = []
+	for recipe_id: String in Model.RECIPE_IDS:
+		portions.append("%s %d" % [model.recipe_name(recipe_id), model.portions_available(recipe_id)])
+	labels.capacity.text = "剩余可做：" + " · ".join(portions)
 	for i in range(Model.TABLE_COUNT):
 		var id: int = model.tables[i]
 		var card := order_cards[i]
@@ -570,7 +575,12 @@ func _show_summary(result: Dictionary) -> void:
 func _format_summary(result: Dictionary) -> String:
 	var expenses: Dictionary = result.expenses
 	var spending: int = expenses.purchase + expenses.wages + expenses.furniture + expenses.equipment + expenses.expansion
-	return "第 %d 天  日初 %d  +营业 %d  -支出 %d  =日末 %d\n现金变化 %+d · 食材消耗成本 %d · 估算经营收益 %d\n采购 %d · 工资 %d · 家具 %d · 设备 %d · 扩建 %d\n完成 %d 桌 · 流失 %d 位（未购买 %d）· 好评 %d · 差评 %d\n平均等餐 %.1f 秒 · 剩余污渍 %d\n员工完成：做菜 %d · 上菜 %d · 收盘 %d · 清洁 %d\n%s" % [result.day, result.opening_cash, result.income, spending, result.coins, result.cash_change, result.ingredient_cost, result.operating_profit, expenses.purchase, expenses.wages, expenses.furniture, expenses.equipment, expenses.expansion, result.served, result.lost, result.no_sale, result.good_reviews, result.bad_reviews, result.average_wait, result.stains, employee.tasks_completed.cook, employee.tasks_completed.serve, employee.tasks_completed.clear, employee.tasks_completed.clean, ("%d 位顾客未完成消费。" % result.lost) if result.lost > 0 else "今日营业已完成。"]
+	var missing: Array[String] = []
+	for recipe_id: String in Model.RECIPE_IDS:
+		var count: int = result.missing_first_choices.get(recipe_id, 0)
+		if count > 0: missing.append("%s %d 位" % [model.recipe_name(recipe_id), count])
+	var missing_text := "、".join(missing) if not missing.is_empty() else "无"
+	return "第 %d 天  日初 %d  +营业 %d  -支出 %d  =日末 %d\n现金变化 %+d · 食材消耗成本 %d · 估算经营收益 %d\n采购 %d · 工资 %d · 家具 %d · 设备 %d · 扩建 %d\n完成 %d 桌 · 流失 %d 位（未购买 %d）· 好评 %d · 差评 %d\n缺菜离店（按首选统计）：%s\n售价/口味未成交：%d 位\n平均等餐 %.1f 秒 · 剩余污渍 %d\n员工完成：做菜 %d · 上菜 %d · 收盘 %d · 清洁 %d\n%s" % [result.day, result.opening_cash, result.income, spending, result.coins, result.cash_change, result.ingredient_cost, result.operating_profit, expenses.purchase, expenses.wages, expenses.furniture, expenses.equipment, expenses.expansion, result.served, result.lost, result.no_sale, result.good_reviews, result.bad_reviews, missing_text, result.price_refusals, result.average_wait, result.stains, employee.tasks_completed.cook, employee.tasks_completed.serve, employee.tasks_completed.clear, employee.tasks_completed.clean, ("%d 位顾客未完成消费。" % result.lost) if result.lost > 0 else "今日营业已完成。"]
 
 
 func _toggle_pause() -> void:

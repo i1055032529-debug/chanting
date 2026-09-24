@@ -25,6 +25,7 @@ func _run() -> void:
 	check(game.player != null and game.stations.size() == 8, "four tables and four workstations created")
 	check(not game.try_interact("stove"), "distant interaction rejected")
 	check(game.model.request_customer() and game.model.request_customer(), "two customers reserve tables")
+	check("香煎蛋饭 7" in game.labels.capacity.text and "番茄炒面 7" in game.labels.capacity.text and "鸡蛋拌面 7" in game.labels.capacity.text, "service HUD shows remaining portions for all dishes after reservation")
 	for customer in game.customers.values():
 		for i in range(3): customer._process(10.0)
 	check(game.model.orders[1].state == "waiting" and game.model.orders[2].state == "waiting", "two orders coexist")

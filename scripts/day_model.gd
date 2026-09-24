@@ -63,6 +63,8 @@ var ingredient_consumed_cost := 0
 var served := 0
 var lost := 0
 var no_sale := 0
+var missing_first_choices: Dictionary = {}
+var price_refusals := 0
 var good_reviews := 0
 var bad_reviews := 0
 var next_order_id := 1
@@ -303,7 +305,9 @@ func request_customer() -> bool:
 			break
 	if recipe_id == "":
 		next_order_id += 1
-		browsers[id] = {"state": "arriving", "remaining": 3.5}
+		var first_choice: String = preferences[0]
+		var first_reason := "停售" if not menu_enabled[first_choice] else "缺货" if portions_available(first_choice) <= 0 else "售价或口味"
+		browsers[id] = {"state": "arriving", "remaining": 3.5, "first_choice": first_choice, "first_reason": first_reason}
 		customer_browsing.emit(id)
 		feedback.emit("一位顾客没找到愿意购买的菜，正在店内看看。")
 		changed.emit()
@@ -343,12 +347,7 @@ func seat_customer(id: int) -> bool:
 
 func customer_departed(id: int) -> bool:
 	if browsers.has(id):
-		browsers.erase(id)
-		lost += 1
-		no_sale += 1
-		bad_reviews += 1
-		reviews.append({"table": 0, "good": false, "reason": "没有想买的菜", "satisfaction": 0})
-		changed.emit()
+		_record_no_sale(id)
 		_finish_if_clear()
 		return true
 	if not orders.has(id): return false
@@ -364,6 +363,21 @@ func customer_departed(id: int) -> bool:
 	changed.emit()
 	_finish_if_clear()
 	return true
+
+
+func _record_no_sale(id: int) -> void:
+	if not browsers.has(id): return
+	var browser: Dictionary = browsers[id]
+	browsers.erase(id)
+	lost += 1
+	no_sale += 1
+	bad_reviews += 1
+	if browser.first_reason in ["缺货", "停售"]:
+		missing_first_choices[browser.first_choice] = int(missing_first_choices.get(browser.first_choice, 0)) + 1
+	else:
+		price_refusals += 1
+	reviews.append({"table": 0, "good": false, "reason": browser.first_reason, "first_choice": browser.first_choice, "satisfaction": 0})
+	changed.emit()
 
 
 func cancel_order(id: int) -> bool:
@@ -701,7 +715,7 @@ func summary() -> Dictionary:
 	var totals := {"income": 0, "purchase": 0, "wages": 0, "furniture": 0, "equipment": 0, "expansion": 0}
 	for entry in ledger:
 		totals[entry.kind] += absi(entry.amount)
-	return {"day": day_number, "opening_cash": day_opening_cash, "coins": coins, "cash_change": coins - day_opening_cash, "income": totals.income, "expenses": {"purchase": totals.purchase, "wages": totals.wages, "furniture": totals.furniture, "equipment": totals.equipment, "expansion": totals.expansion}, "ingredient_cost": ingredient_consumed_cost, "operating_profit": totals.income - ingredient_consumed_cost - totals.wages, "ledger": ledger.duplicate(true), "served": served, "lost": lost, "no_sale": no_sale, "good_reviews": good_reviews, "bad_reviews": bad_reviews, "stains": stains.size(), "elapsed": elapsed, "payments": payments.duplicate(), "reviews": reviews.duplicate(true), "average_wait": _average_wait(), "reason": "未找到想买的菜" if lost > 0 and no_sale == lost else "等餐超时" if lost > 0 else "营业完成"}
+	return {"day": day_number, "opening_cash": day_opening_cash, "coins": coins, "cash_change": coins - day_opening_cash, "income": totals.income, "expenses": {"purchase": totals.purchase, "wages": totals.wages, "furniture": totals.furniture, "equipment": totals.equipment, "expansion": totals.expansion}, "ingredient_cost": ingredient_consumed_cost, "operating_profit": totals.income - ingredient_consumed_cost - totals.wages, "ledger": ledger.duplicate(true), "served": served, "lost": lost, "no_sale": no_sale, "missing_first_choices": missing_first_choices.duplicate(), "price_refusals": price_refusals, "good_reviews": good_reviews, "bad_reviews": bad_reviews, "stains": stains.size(), "elapsed": elapsed, "payments": payments.duplicate(), "reviews": reviews.duplicate(true), "average_wait": _average_wait(), "reason": "未找到想买的菜" if lost > 0 and no_sale == lost else "等餐超时" if lost > 0 else "营业完成"}
 
 
 func start_day() -> bool:
@@ -776,6 +790,8 @@ func _clear_day() -> void:
 	served = 0
 	lost = 0
 	no_sale = 0
+	missing_first_choices.clear()
+	price_refusals = 0
 	good_reviews = 0
 	bad_reviews = 0
 	spawn_clock = 0.0
@@ -869,11 +885,7 @@ func _force_finish() -> void:
 		if orders[id].state in ["arriving", "waiting", "cooking", "ready", "carried"]: _timeout(id)
 	for id: int in browsers.keys():
 		customer_leave_requested.emit(id)
-		browsers.erase(id)
-		lost += 1
-		no_sale += 1
-		bad_reviews += 1
-		reviews.append({"table": 0, "good": false, "reason": "没有想买的菜", "satisfaction": 0})
+		_record_no_sale(id)
 	_finish_day()
 
 

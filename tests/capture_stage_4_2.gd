@@ -30,6 +30,13 @@ func _capture() -> void:
 	for i in range(3): game.customers[id]._process(10.0)
 	game.model.interact("table_1")
 	game.model.interact("sink")
+	# Show the new first-choice shortage breakdown in the actual day report.
+	for ingredient: String in game.model.INGREDIENTS: game.model.inventory[ingredient] = 0
+	game.model.request_customer()
+	var browser_id: int = game.model.next_order_id - 1
+	game.customers[browser_id]._process(10.0)
+	game.model.advance(3.6)
+	game.customers[browser_id]._process(10.0)
 	game.model.advance(game.model.DAY_SECONDS)
 	await process_frame
 	await RenderingServer.frame_post_draw
