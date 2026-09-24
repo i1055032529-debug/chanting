@@ -21,6 +21,7 @@ func _simulate(with_employee: bool) -> Dictionary:
 	await physics_frame
 	await process_frame
 	game.employee.enabled = with_employee
+	game.start_day()
 	var next_manual := 0.0
 	var manual_cook_done := -1.0
 	var actions := 0

@@ -41,7 +41,7 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if model == null or model.ended: return
+	if model == null or model.phase != "open" or model.ended: return
 	clock += delta
 	if grid == null: _build_grid()
 	if model.employee_carrying == model.Carry.FOOD and (not model.orders.has(model.employee_carried_order_id) or model.orders[model.employee_carried_order_id].state != "carried"):
@@ -261,6 +261,13 @@ func reset_day() -> void:
 	failed_until.clear()
 	tasks_completed = {"serve": 0, "clear": 0, "clean": 0, "cook": 0}
 	position = HOME
+
+
+func reset_new_game() -> void:
+	reset_day()
+	enabled = true
+	work_enabled = {"serve": true, "clear": true, "clean": true, "cook": true}
+	priority = ["serve", "clear", "clean", "cook"]
 
 
 func toggle_work(kind: String) -> void:

@@ -8,6 +8,7 @@ func _capture() -> void:
 	root.add_child(game)
 	await physics_frame
 	await process_frame
+	game.start_day()
 	for n in range(2): game.model.request_customer()
 	for customer in game.customers.values():
 		for i in range(3): customer._process(10.0)

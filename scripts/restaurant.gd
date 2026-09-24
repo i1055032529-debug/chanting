@@ -29,6 +29,8 @@ var labels: Dictionary = {}
 var order_cards: Array[Label] = []
 var prompt: Label
 var pause_panel: Panel
+var preopen_panel: Panel
+var preopen_text: Label
 var summary_panel: Panel
 var summary_text: Label
 var management_panel: Panel
@@ -36,7 +38,7 @@ var work_buttons: Dictionary = {}
 var reset_dialog: ConfirmationDialog
 var debug_label: Label
 var debug_visible := false
-var toast := "欢迎开店！先看上方四张桌子的订单。"
+var toast := "先查看开店准备，再开始今天的营业。"
 var toast_time := 8.0
 var nearest := ""
 var cooking_screen: Control
@@ -51,6 +53,7 @@ func _ready() -> void:
 	font.font_names = PackedStringArray(["PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"])
 	_build_room()
 	_build_ui()
+	player.locked = true
 	model.customer_requested.connect(_spawn_customer)
 	model.customer_leave_requested.connect(_leave_customer)
 	model.cooking_requested.connect(_open_cooking)
@@ -64,7 +67,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	toast_time = maxf(0.0, toast_time - delta)
 	model.advance(delta)
-	player.locked = is_instance_valid(cooking_screen) or model.ended
+	player.locked = is_instance_valid(cooking_screen) or model.phase != "open"
 	player.carried = model.carrying
 	if model.carrying == Model.Carry.FOOD and model.orders.has(model.carried_order_id):
 		player.avatar.held.modulate = Model.RECIPES[model.orders[model.carried_order_id].recipe].color
@@ -73,8 +76,8 @@ func _process(delta: float) -> void:
 	_sync_stains()
 	_refresh_ui()
 	_refresh_employee_panel()
-	nearest = closest_target()
-	prompt.text = "[ E ] %s · %s" % [stations[nearest].display_name, _action_hint(nearest)] if nearest != "" else "靠近工作台、餐桌或污渍按 E 交互；Q 切换待做订单"
+	nearest = closest_target() if model.phase == "open" else ""
+	prompt.text = "[ E ] %s · %s" % [stations[nearest].display_name, _action_hint(nearest)] if nearest != "" else ("点击开始营业，进入第 %d 天。" % model.day_number if model.phase == "preopen" else "查看今日结算，准备下一天。" if model.phase == "summary" else "靠近工作台、餐桌或污渍按 E 交互；Q 切换待做订单")
 	labels.toast.text = toast if toast_time > 0.0 else _next_step()
 	for id: String in stations:
 		stations[id].set_highlight(id == nearest)
@@ -109,11 +112,11 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if is_instance_valid(cooking_screen) or model.ended: return
-	if event.is_action_pressed("interact") and not event.is_echo():
+	if is_instance_valid(cooking_screen) or model.phase == "summary": return
+	if event.is_action_pressed("interact") and not event.is_echo() and model.phase == "open":
 		try_interact(closest_target())
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("select_order") and not event.is_echo():
+	elif event.is_action_pressed("select_order") and not event.is_echo() and model.phase == "open":
 		var id := model.select_next()
 		_show_feedback("已选中订单 #%d，%02d 号桌。" % [id, model.orders[id].table + 1] if id != 0 else "当前没有待做订单。")
 		get_viewport().set_input_as_handled()
@@ -145,7 +148,7 @@ func target_position(id: String) -> Vector2:
 
 
 func try_interact(id: String) -> bool:
-	if is_instance_valid(cooking_screen) or model.ended: return false
+	if is_instance_valid(cooking_screen) or model.phase != "open": return false
 	if id == "" or not stations.has(id):
 		_show_feedback("请靠近工作台、餐桌或污渍。")
 		return false
@@ -159,6 +162,35 @@ func try_interact(id: String) -> bool:
 
 
 func reset_run() -> void:
+	_clear_scene_day()
+	model.new_game()
+	employee.reset_new_game()
+	preopen_panel.show()
+	_show_feedback("新游戏已建立。准备第 1 天营业。")
+	_refresh_ui()
+
+
+func prepare_next_day() -> bool:
+	if model.phase != "summary": return false
+	_clear_scene_day()
+	if not model.next_day(): return false
+	employee.reset_day()
+	preopen_panel.show()
+	_show_feedback("第 %d 天准备就绪。" % model.day_number)
+	_refresh_ui()
+	return true
+
+
+func start_day() -> bool:
+	if not model.start_day(): return false
+	preopen_panel.hide()
+	management_panel.hide()
+	player.locked = false
+	_refresh_ui()
+	return true
+
+
+func _clear_scene_day() -> void:
 	_close_cooking()
 	for customer in customers.values():
 		if is_instance_valid(customer): customer.free()
@@ -167,16 +199,12 @@ func reset_run() -> void:
 		stations.erase(key)
 		if is_instance_valid(stain_nodes[key]): stain_nodes[key].queue_free()
 	stain_nodes.clear()
-	model.reset()
-	employee.reset_day()
 	management_panel.hide()
 	player.global_position = $PlayerStart.global_position
 	player.velocity = Vector2.ZERO
-	player.locked = false
+	player.locked = true
 	player.carried = 0
 	summary_panel.hide()
-	_show_feedback("新营业日开始！")
-	_refresh_ui()
 
 
 func _setup_input() -> void:
@@ -345,23 +373,31 @@ func _build_ui() -> void:
 		var up_button := _make_button(management_panel, "↑ 优先", Rect2(336, row_y, 89, 32), func(): _move_employee_priority(row_kind))
 		work_buttons["up_" + row_kind] = up_button
 	_child_label(management_panel, "双炉灶可同时做菜；主角可接手员工尚未开始的任务。", Vector2(20, 370), Vector2(420, 24), 13, MUTED)
+	preopen_panel = _panel(Rect2(325, 225, 630, 350), Color("30291f"))
+	preopen_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_child_label(preopen_panel, "开店准备", Vector2(34, 24), Vector2(550, 48), 30, GOLD)
+	preopen_text = _child_label(preopen_panel, "", Vector2(34, 86), Vector2(560, 120), 19, CREAM)
+	_button(preopen_panel, "开始营业", Rect2(34, 220, 562, 48), start_day)
+	_button(preopen_panel, "员工安排 · M", Rect2(34, 286, 265, 38), _toggle_management)
+	_button(preopen_panel, "开始新游戏", Rect2(331, 286, 265, 38), _open_reset)
 	pause_panel = _panel(Rect2(425, 270, 430, 260), Color("38291f"))
 	pause_panel.visible = false
 	pause_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_child_label(pause_panel, "休息一下", Vector2(34, 26), Vector2(350, 48), 29, CREAM)
 	_child_label(pause_panel, "营业时间与顾客耐心已暂停。", Vector2(34, 82), Vector2(360, 30), 16, MUTED)
 	_button(pause_panel, "继续营业 · Esc", Rect2(34, 137, 362, 42), _toggle_pause)
-	_button(pause_panel, "重新开店", Rect2(34, 192, 362, 38), _open_reset)
+	_button(pause_panel, "开始新游戏", Rect2(34, 192, 362, 38), _open_reset)
 	summary_panel = _panel(Rect2(290, 176, 700, 440), Color("30291f"))
 	summary_panel.hide()
 	summary_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_child_label(summary_panel, "今日营业结算", Vector2(34, 23), Vector2(620, 48), 31, GOLD)
-	summary_text = _child_label(summary_panel, "", Vector2(34, 94), Vector2(630, 250), 18, CREAM)
-	_button(summary_panel, "开始新营业日", Rect2(34, 364, 632, 50), reset_run)
+	summary_text = _child_label(summary_panel, "", Vector2(34, 94), Vector2(630, 255), 17, CREAM)
+	_button(summary_panel, "准备下一营业日", Rect2(34, 364, 430, 50), prepare_next_day)
+	_button(summary_panel, "新游戏", Rect2(480, 364, 186, 50), _open_reset)
 	reset_dialog = ConfirmationDialog.new()
-	reset_dialog.title = "重新开店"
-	reset_dialog.dialog_text = "将清空本营业日的金币、订单和评价记录，确定重新开始吗？"
-	reset_dialog.ok_button_text = "重新开始"
+	reset_dialog.title = "开始新游戏"
+	reset_dialog.dialog_text = "这会清空所有营业日的金币、账本和经营进度。确定开始新游戏吗？"
+	reset_dialog.ok_button_text = "开始新游戏"
 	reset_dialog.cancel_button_text = "返回"
 	reset_dialog.min_size = Vector2i(450, 140)
 	reset_dialog.confirmed.connect(func():
@@ -380,17 +416,25 @@ func _build_ui() -> void:
 	modal_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	modal_layer.add_child(modal_root)
 	pause_panel.reparent(modal_root)
+	preopen_panel.reparent(modal_root)
 	summary_panel.reparent(modal_root)
 	reset_dialog.reparent(modal_root)
 
 
 func _refresh_ui() -> void:
 	if labels.is_empty(): return
+	if model.phase == "summary" and summary_panel != null and summary_panel.visible:
+		summary_text.text = _format_summary(model.summary())
+	labels.title.text = "一人食堂 · 第 %d 天" % model.day_number
 	labels.coins.text = "%d 金币" % model.coins
 	labels.served.text = "接待 %d" % model.served
 	labels.lost.text = "流失 %d" % model.lost
 	var remaining: int = maxi(0, ceili(Model.DAY_SECONDS - model.elapsed))
-	labels.time.text = ("收尾 %02d:%02d" % [maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) / 60, maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) % 60]) if model.day_closed else ("营业 %02d:%02d" % [remaining / 60, remaining % 60])
+	if model.phase == "preopen": labels.time.text = "开店准备"
+	elif model.phase == "summary": labels.time.text = "今日结算"
+	else: labels.time.text = ("收尾 %02d:%02d" % [maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) / 60, maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) % 60]) if model.day_closed else ("营业 %02d:%02d" % [remaining / 60, remaining % 60])
+	if preopen_text != null:
+		preopen_text.text = "第 %d 天  ·  当前现金 %d 金币\n\n前一天的收入会保留到今天。\n准备就绪后开始营业；结算时查看资金变化。" % [model.day_number, model.coins]
 	labels.clean.text = "整洁 %d%%" % [roundi((1.0 - float(model.stains.size()) / Model.STAIN_LIMIT) * 100)]
 	labels.clean.add_theme_color_override("font_color", GREEN if model.stains.size() <= 1 else RED)
 	labels.employee.text = "员工：%s%s" % [employee.status, (" · %s" % employee.failure_reason) if employee.failure_reason != "" and employee.failure_reason != employee.status else ""]
@@ -411,13 +455,19 @@ func _refresh_ui() -> void:
 
 func _show_summary(result: Dictionary) -> void:
 	_close_cooking()
-	summary_text.text = "收入 %d 金币    完成 %d 桌    流失 %d 位\n好评 %d    差评 %d    剩余污渍 %d\n平均等餐 %.1f 秒\n%s\n员工完成：做菜 %d · 上菜 %d · 收盘 %d · 清洁 %d\n%s" % [result.coins, result.served, result.lost, result.good_reviews, result.bad_reviews, result.stains, result.average_wait, ("%d 位顾客因等餐超时离店。" % result.lost) if result.lost > 0 else "全部顾客都获得服务。", employee.tasks_completed.cook, employee.tasks_completed.serve, employee.tasks_completed.clear, employee.tasks_completed.clean, "收尾时间已到；可以开始新的一天。" if result.elapsed >= Model.DAY_SECONDS + Model.CLOSING_GRACE else "今日营业已完成。"]
+	summary_text.text = _format_summary(result)
 	management_panel.hide()
 	summary_panel.show()
 
 
+func _format_summary(result: Dictionary) -> String:
+	var expenses: Dictionary = result.expenses
+	var spending: int = expenses.purchase + expenses.wages + expenses.furniture + expenses.equipment + expenses.expansion
+	return "第 %d 天  日初 %d  +营业 %d  -支出 %d  =日末 %d\n现金变化 %+d 金币\n采购 %d · 工资 %d · 家具 %d · 设备 %d · 扩建 %d\n完成 %d 桌 · 流失 %d 位 · 好评 %d · 差评 %d\n平均等餐 %.1f 秒 · 剩余污渍 %d\n员工完成：做菜 %d · 上菜 %d · 收盘 %d · 清洁 %d\n%s" % [result.day, result.opening_cash, result.income, spending, result.coins, result.cash_change, expenses.purchase, expenses.wages, expenses.furniture, expenses.equipment, expenses.expansion, result.served, result.lost, result.good_reviews, result.bad_reviews, result.average_wait, result.stains, employee.tasks_completed.cook, employee.tasks_completed.serve, employee.tasks_completed.clear, employee.tasks_completed.clean, ("%d 位顾客因等餐超时离店。" % result.lost) if result.lost > 0 else "今日营业已完成。"]
+
+
 func _toggle_pause() -> void:
-	if reset_dialog.visible or model.ended: return
+	if reset_dialog.visible or model.phase != "open": return
 	get_tree().paused = not get_tree().paused
 	management_panel.hide()
 	if is_instance_valid(cooking_screen): cooking_screen.clear_heat()
@@ -431,8 +481,9 @@ func _open_reset() -> void:
 
 
 func _toggle_management() -> void:
-	if model.ended or is_instance_valid(cooking_screen): return
+	if model.phase == "summary" or is_instance_valid(cooking_screen): return
 	management_panel.visible = not management_panel.visible
+	if model.phase == "preopen": preopen_panel.visible = not management_panel.visible
 	_refresh_employee_panel()
 
 
@@ -470,6 +521,8 @@ func _show_feedback(message: String) -> void:
 
 
 func _next_step() -> String:
+	if model.phase == "preopen": return "开店前可查看员工安排；点击开始营业后才会接待顾客。"
+	if model.phase == "summary": return "查看收入与支出，然后准备下一营业日。"
 	if model.day_closed: return "已停止接客，请完成当前工作；收尾结束后自动日结。"
 	if model.pass_order_id != 0: return "出餐台有一份菜，优先取餐上菜。"
 	if model.most_urgent_waiting() != 0: return "有顾客正在等餐。Q 可切换目标订单。"

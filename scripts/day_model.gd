@@ -1,6 +1,6 @@
 class_name DayModel
 extends RefCounted
-## Four-table manual service. All time, reservations and money live here.
+## Restaurant-day simulation plus the run's cash, reports and transaction ledger.
 
 signal changed
 signal feedback(message: String)
@@ -14,6 +14,7 @@ enum Carry { NONE, FOOD, PLATE }
 const TABLE_COUNT := 4
 const STOVES := ["stove", "stove_2"]
 const PASS_CAPACITY := 2
+const EXPENSE_KINDS := ["purchase", "wages", "furniture", "equipment", "expansion"]
 const DAY_SECONDS := 180.0
 const CLOSING_GRACE := 35.0
 const PATIENCE := 48.0
@@ -30,6 +31,12 @@ const RECIPES := {
 }
 const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
 
+var phase := "preopen"
+var day_number := 1
+var day_opening_cash := 0
+var ledger: Array[Dictionary] = []
+var day_reports: Array[Dictionary] = []
+var transaction_keys: Dictionary = {}
 var elapsed := 0.0
 var day_closed := false
 var ended := false
@@ -66,7 +73,7 @@ var employee_carried_table_id := -1
 
 
 func advance(delta: float) -> void:
-	if ended or delta <= 0.0: return
+	if phase != "open" or ended or delta <= 0.0: return
 	elapsed += delta
 	if not day_closed and elapsed >= DAY_SECONDS:
 		day_closed = true
@@ -99,7 +106,7 @@ func advance(delta: float) -> void:
 
 
 func request_customer() -> bool:
-	if day_closed or ended or orders.size() >= TABLE_COUNT: return false
+	if phase != "open" or day_closed or ended or orders.size() >= TABLE_COUNT: return false
 	var table_id := -1
 	for i in range(TABLE_COUNT):
 		if tables[i] == 0:
@@ -164,7 +171,7 @@ func task_owner(kind: String, id: int) -> String:
 
 
 func task_available(kind: String, id: int, station: String = "") -> bool:
-	if ended or task_owner(kind, id) != "": return false
+	if phase != "open" or ended or task_owner(kind, id) != "": return false
 	match kind:
 		"cook":
 			if not orders.has(id) or orders[id].state != "waiting" or _output_occupancy() >= PASS_CAPACITY: return false
@@ -178,6 +185,7 @@ func task_available(kind: String, id: int, station: String = "") -> bool:
 
 
 func claim_task(kind: String, id: int, actor: String, station: String = "") -> bool:
+	if phase != "open": return false
 	if actor not in ["player", "employee"]: return false
 	if actor == "player" and carrying != Carry.NONE: return false
 	if actor == "employee" and employee_carrying != Carry.NONE: return false
@@ -315,7 +323,7 @@ func interact(target: String) -> bool:
 
 
 func interact_as(actor: String, target: String, target_order_id: int = 0) -> bool:
-	if actor not in ["player", "employee"] or ended: return false
+	if actor not in ["player", "employee"] or phase != "open" or ended: return false
 	if target in STOVES:
 		return start_cooking(target) if actor == "player" else false
 	var held: Carry = carrying if actor == "player" else employee_carrying
@@ -460,17 +468,73 @@ func recipe_name(id: String) -> String:
 
 
 func summary() -> Dictionary:
-	return {"coins": coins, "served": served, "lost": lost, "good_reviews": good_reviews, "bad_reviews": bad_reviews, "stains": stains.size(), "elapsed": elapsed, "payments": payments.duplicate(), "reviews": reviews.duplicate(true), "average_wait": _average_wait(), "reason": "等餐超时" if lost > 0 else "营业完成"}
+	var totals := {"income": 0, "purchase": 0, "wages": 0, "furniture": 0, "equipment": 0, "expansion": 0}
+	for entry in ledger:
+		totals[entry.kind] += absi(entry.amount)
+	return {"day": day_number, "opening_cash": day_opening_cash, "coins": coins, "cash_change": coins - day_opening_cash, "income": totals.income, "expenses": {"purchase": totals.purchase, "wages": totals.wages, "furniture": totals.furniture, "equipment": totals.equipment, "expansion": totals.expansion}, "ledger": ledger.duplicate(true), "served": served, "lost": lost, "good_reviews": good_reviews, "bad_reviews": bad_reviews, "stains": stains.size(), "elapsed": elapsed, "payments": payments.duplicate(), "reviews": reviews.duplicate(true), "average_wait": _average_wait(), "reason": "等餐超时" if lost > 0 else "营业完成"}
+
+
+func start_day() -> bool:
+	if phase != "preopen": return false
+	phase = "open"
+	feedback.emit("第 %d 天营业开始。" % day_number)
+	changed.emit()
+	return true
+
+
+func next_day() -> bool:
+	if phase != "summary" or not ended: return false
+	day_number += 1
+	day_opening_cash = coins
+	ledger.clear()
+	transaction_keys.clear()
+	_clear_day()
+	phase = "preopen"
+	changed.emit()
+	return true
+
+
+func new_game() -> void:
+	day_number = 1
+	coins = 0
+	day_opening_cash = 0
+	ledger.clear()
+	day_reports.clear()
+	transaction_keys.clear()
+	_clear_day()
+	phase = "preopen"
+	changed.emit()
 
 
 func reset() -> void:
+	new_game()
+
+
+func spend(kind: String, amount: int, reference: String) -> bool:
+	if kind not in EXPENSE_KINDS or amount <= 0 or phase not in ["preopen", "summary"]: return false
+	return _post_transaction(kind, -amount, reference)
+
+
+func _post_transaction(kind: String, amount: int, reference: String) -> bool:
+	if reference == "" or amount == 0: return false
+	if transaction_keys.has(reference) or coins + amount < 0: return false
+	if kind == "income" and (amount < 0 or phase != "open"): return false
+	if kind != "income" and (amount > 0 or kind not in EXPENSE_KINDS): return false
+	transaction_keys[reference] = true
+	coins += amount
+	ledger.append({"day": day_number, "kind": kind, "amount": amount, "reference": reference})
+	if phase == "summary" and not day_reports.is_empty(): day_reports[-1] = summary().duplicate(true)
+	changed.emit()
+	return true
+
+
+func _clear_day() -> void:
 	# Keep sequence numbers monotonic so delayed callbacks cannot attach to a new day.
 	next_order_id += 1
 	next_attempt_id += 1
 	elapsed = 0.0
 	day_closed = false
 	ended = false
-	coins = 0
 	served = 0
 	lost = 0
 	good_reviews = 0
@@ -496,7 +560,6 @@ func reset() -> void:
 	payments.clear()
 	reviews.clear()
 	wait_records.clear()
-	changed.emit()
 
 
 func _timeout(id: int) -> void:
@@ -526,6 +589,8 @@ func _timeout(id: int) -> void:
 func _pay_and_leave(id: int) -> void:
 	if not orders.has(id) or orders[id].state != "eating": return
 	var order: Dictionary = orders[id]
+	var amount: int = RECIPES[order.recipe].price + order.bonus
+	if not _post_transaction("income", amount, "payment:%d" % id): return
 	order.state = "leaving_paid"
 	var clean := stains.size() <= 1
 	var prompt := ""
@@ -539,8 +604,6 @@ func _pay_and_leave(id: int) -> void:
 	if good: good_reviews += 1
 	else: bad_reviews += 1
 	wait_records.append(order.waited)
-	var amount: int = RECIPES[order.recipe].price + order.bonus
-	coins += amount
 	payments.append(amount)
 	served += 1
 	customer_leave_requested.emit(id)
@@ -572,6 +635,7 @@ func _finish_if_clear() -> void:
 func _finish_day() -> void:
 	if ended: return
 	ended = true
+	phase = "summary"
 	task_owners.clear()
 	task_active.clear()
 	cook_stations.clear()
@@ -582,7 +646,9 @@ func _finish_day() -> void:
 	employee_carrying = Carry.NONE
 	employee_carried_order_id = 0
 	employee_carried_table_id = -1
-	day_finished.emit(summary())
+	var report := summary()
+	day_reports.append(report.duplicate(true))
+	day_finished.emit(report)
 	changed.emit()
 
 

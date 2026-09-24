@@ -26,6 +26,7 @@ func _run() -> void:
 	root.add_child(game)
 	game.employee.enabled = false
 	await process_frame
+	game.start_day()
 	game.model.request_customer()
 	for i in range(3): game.customers[1]._process(10.0)
 	game.player.position = game.target_position("stove")
@@ -66,6 +67,7 @@ func _run() -> void:
 	check(game.model.carrying == Day.Carry.NONE, "acknowledge does not trigger restaurant pickup")
 	game.reset_run()
 	await process_frame
+	game.start_day()
 	game.model.request_customer()
 	var id: int = game.model.next_order_id - 1
 	for i in range(3): game.customers[id]._process(10.0)
@@ -73,7 +75,7 @@ func _run() -> void:
 	game.try_interact("stove")
 	game.reset_run()
 	await process_frame
-	check(game.cooking_screen == null and not game.player.locked, "reset closes cooking and unlocks player")
+	check(game.cooking_screen == null and game.model.phase == "preopen", "new game closes cooking and returns to preparation")
 	print("COOKING SCREEN: %d checks, %d failures." % [checks, failures])
 	game.queue_free()
 	await process_frame

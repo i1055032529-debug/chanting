@@ -17,6 +17,8 @@ func _run() -> void:
 	root.add_child(game)
 	await physics_frame
 	await process_frame
+	game.start_day()
+	game.employee._physics_process(0.0)
 	check(game.employee != null and game.employee.grid != null, "employee and obstacle grid exist")
 	var menu_key := InputEventKey.new()
 	menu_key.keycode = KEY_M
@@ -54,6 +56,7 @@ func _run() -> void:
 	check(not game.employee.work_enabled.clean, "work type can be disabled")
 	game.employee.toggle_work("clean")
 	game.reset_run()
+	game.start_day()
 	game.employee.work_enabled.cook = false
 	game.model.request_customer()
 	var disabled_id: int = game.model.next_order_id - 1
@@ -72,6 +75,7 @@ func _run() -> void:
 	game.employee._physics_process(0.1)
 	check(game.employee.job.is_empty() and game.model.orders[disabled_id].state == "cooking", "displaced employee leaves player cooking intact")
 	game.reset_run()
+	game.start_day()
 	var stove_position: Vector2 = game.stations.stove.position
 	game.stations.stove.position = Vector2(5, 5)
 	game.model.request_customer()
@@ -84,6 +88,7 @@ func _run() -> void:
 	var totals: Array[int] = []
 	for day in range(3):
 		game.reset_run()
+		game.start_day()
 		for step in range(2180):
 			game.model.advance(0.1)
 			game.employee._physics_process(0.1)

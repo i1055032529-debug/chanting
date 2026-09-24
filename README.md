@@ -1,6 +1,6 @@
 # 一人食堂 · Chanting
 
-Godot 像素风餐厅经营游戏。当前已完成阶段三的首位员工协作版本：四桌营业、两道菜、独立烹饪小游戏和员工自动完成日常工作。
+Godot 像素风餐厅经营游戏。已实现四桌营业、两道菜、独立烹饪小游戏、员工自动工作，以及阶段 4.1 的跨日资金和日结账本。
 
 ![阶段三实际运行画面](docs/stage-3-preview.webp)
 
@@ -19,11 +19,11 @@ Godot 像素风餐厅经营游戏。当前已完成阶段三的首位员工协�
 | Esc | 暂停 / 继续 |
 | F1 | 开关调试信息；调试模式下 N 生成顾客、R 重新开店 |
 
-靠近烹饪台按 E 进入独立小游戏。小游戏中按住空格加热，松开降温，在翻炒游标的绿色区按 F，熟度达到 80 后按 E 出锅；B 可返回餐厅并保留订单。更高的品质会增加付款金额。
+游戏从“开店准备”开始，点击“开始营业”后才会接待顾客。靠近烹饪台按 E 进入独立小游戏。小游戏中按住空格加热，松开降温，在翻炒游标的绿色区按 F，熟度达到 80 后按 E 出锅；B 可返回餐厅并保留订单。更高的品质会增加付款金额。
 
 ## 员工协作
 
-开局有一名员工，默认自动做菜、上菜、收盘和清洁。店内有两个可独立使用的烹饪台，主角与员工可以同时做菜。员工出发前会预留任务；在员工到达并开始执行前，主角可直接接手。员工已开始做菜、拿起菜品或收走餐盘后，任务由员工完成。员工之间仍不能重复领取同一任务。顶部显示员工当前工作和失败原因。按 M 打开管理面板，关闭某项工作或调整优先级；员工会先做完手上的事，再应用新设置。禁用整名员工后，主角仍可独立完成营业日。首位员工的正式雇佣、工资和跨日管理安排在阶段四。
+开局有一名员工，默认自动做菜、上菜、收盘和清洁。店内有两个可独立使用的烹饪台，主角与员工可以同时做菜。员工出发前会预留任务；在员工到达并开始执行前，主角可直接接手。员工已开始做菜、拿起菜品或收走餐盘后，任务由员工完成。员工之间仍不能重复领取同一任务。顶部显示员工当前工作和失败原因。按 M 打开管理面板，关闭某项工作或调整优先级；设置在下一营业日继续生效。禁用整名员工后，主角仍可独立完成营业日。正式雇佣和工资在阶段 4.3 加入。
 
 ![员工管理界面](docs/stage-3-management.webp)
 
@@ -34,8 +34,8 @@ Godot 像素风餐厅经营游戏。当前已完成阶段三的首位员工协�
 - 出餐台最多放两份菜；做菜开工时会预留出餐位置。每个角色一次只能拿一件物品。把菜送错桌会提示，食物不会丢失。
 - 顾客等餐超时会离店；制作中、出餐台和手中的失效食物会清理，不会长期占用炉灶或角色。
 - 顾客用餐后付款、评价并离店。靠近桌子收盘，送到回收台，桌子恢复可用；地面出现污渍时，空手靠近按 E 清洁。
-- 营业 180 秒，随后停止接待新顾客，并给 35 秒收尾。日结显示收入、接待、流失、好差评、污渍、平均等餐时间和员工完成工作数。
-- 当前不跨营业日保存金币；“开始新营业日”开启一局新的经营。
+- 营业 180 秒，随后停止接待新顾客，并给 35 秒收尾。日结显示日初现金、营业收入、各类支出、日末现金，以及接待、评价和员工完成工作数。
+- 点击“准备下一营业日”会保留金币、天数和员工安排，并清空当天的订单与任务；“新游戏”经确认后清空全部进度。目前尚未写入磁盘，退出程序后进度不会保留，本地存档安排在阶段 4.4。
 
 ## 图片和代码
 
@@ -48,7 +48,7 @@ Godot 像素风餐厅经营游戏。当前已完成阶段三的首位员工协�
 - `scenes/furniture/`、`scenes/actors/`：可独立替换的家具和角色场景。
 - `scripts/service_model.gd`：保留阶段一单桌服务规则作为历史回归样本；当前游戏使用 `DayModel`。
 
-详见 [完整开发计划](docs/development-plan.md)、[阶段三实现说明](docs/stage-3.md)、[阶段二实现说明](docs/stage-2.md)、[烹饪小游戏说明](docs/cooking-minigame.md) 与 [图片替换说明](docs/image-assets.md)。
+详见 [完整开发计划](docs/development-plan.md)、[阶段 4.1 实现说明](docs/stage-4-1.md)、[阶段三实现说明](docs/stage-3.md)、[烹饪小游戏说明](docs/cooking-minigame.md) 与 [图片替换说明](docs/image-assets.md)。
 
 ## 验证
 
@@ -63,9 +63,10 @@ godot --headless --path . --script tests/test_cooking_screen.gd
 godot --headless --path . --script tests/test_employee_model.gd
 godot --headless --path . --script tests/test_employee.gd
 godot --headless --path . --script tests/test_employee_comparison.gd
+godot --headless --path . --script tests/test_multi_day.gd
 ```
 
-macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。图形环境下运行 `godot --path . --script tests/capture_preview.gd` 和 `godot --path . --script tests/capture_employee.gd` 可重新生成实际画面。GitHub Actions 对 `main` 的推送自动运行九组测试。
+macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。图形环境下运行 `godot --path . --script tests/capture_stage_4_1.gd` 可重新生成阶段 4.1 实际画面。GitHub Actions 对 `main` 的推送自动运行十组测试。
 
 ## 分支
 

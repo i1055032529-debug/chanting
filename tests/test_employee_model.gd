@@ -18,8 +18,13 @@ func ready_order(model, id: int) -> void:
 	model.start_cooking()
 	model.complete_cooking(id, model.orders[id].cook_attempt, RESULT)
 
-func _run() -> void:
+func active_day():
 	var model = Day.new()
+	model.start_day()
+	return model
+
+func _run() -> void:
+	var model = active_day()
 	for id in [1, 2, 3]:
 		model.request_customer()
 		model.seat_customer(id)
@@ -46,7 +51,7 @@ func _run() -> void:
 	check(model.task_owner("serve", 2) == "" and model.employee_carrying == Day.Carry.FOOD, "timeout releases reservation but keeps invalid food for disposal")
 	check(model.discard_employee_food(), "employee can dispose invalid food")
 	model.customer_departed(2)
-	var clearing = Day.new()
+	var clearing = active_day()
 	clearing.request_customer()
 	clearing.seat_customer(1)
 	ready_order(clearing, 1)
@@ -58,7 +63,7 @@ func _run() -> void:
 	check(clearing.interact("table_1") and clearing.task_owner("clear", 1) == "player", "player takes plate before employee arrives")
 	check(not clearing.interact_as("employee", "table_1"), "employee cannot duplicate player's collection")
 	check(clearing.interact("sink"), "player returns plate")
-	var active_clear = Day.new()
+	var active_clear = active_day()
 	active_clear.request_customer()
 	active_clear.seat_customer(1)
 	ready_order(active_clear, 1)
@@ -72,7 +77,7 @@ func _run() -> void:
 	active_clear.abort_employee_job("clear", 1, "测试中断")
 	check(active_clear.orders[1].state == "dirty" and active_clear.task_owner("clear", 1) == "", "abort restores plate to table")
 	check(active_clear.interact("table_1") and active_clear.interact("sink"), "player recovers released task")
-	var cleaning = Day.new()
+	var cleaning = active_day()
 	cleaning.stains.append({"id": 7, "table": 0})
 	check(cleaning.claim_task("clean", 7, "employee"), "employee reserves stain")
 	check(cleaning.interact("stain_7") and cleaning.stains.is_empty(), "player can clean stain before employee arrives")

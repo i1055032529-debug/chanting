@@ -9,6 +9,7 @@ func _capture() -> void:
 	root.add_child(game)
 	game.employee.enabled = false
 	await process_frame
+	game.start_day()
 	for n in range(4): game.model.request_customer()
 	for customer in game.customers.values():
 		for i in range(3): customer._process(10.0)

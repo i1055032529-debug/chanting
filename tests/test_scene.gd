@@ -20,6 +20,8 @@ func _run() -> void:
 	root.add_child(game)
 	game.employee.enabled = false
 	await process_frame
+	check(game.model.phase == "preopen" and not game.model.request_customer(), "new game waits for opening")
+	check(game.start_day() and not game.start_day(), "opening happens once")
 	check(game.player != null and game.stations.size() == 8, "four tables and four workstations created")
 	check(not game.try_interact("stove"), "distant interaction rejected")
 	check(game.model.request_customer() and game.model.request_customer(), "two customers reserve tables")
@@ -55,6 +57,7 @@ func _run() -> void:
 	game.player.position = game.target_position("stain_999")
 	check(game.try_interact("stain_999") and game.model.stains.is_empty(), "player cleans visible stain")
 	game.reset_run()
+	game.start_day()
 	check(game.stations.has("stove_2") and game.target_position("stove").distance_to(game.target_position("stove_2")) > 100.0, "both cooking positions are separately reachable")
 	game.model.request_customer()
 	game.model.request_customer()
@@ -71,6 +74,7 @@ func _run() -> void:
 	game.model.advance(2.0)
 	check(is_instance_valid(game.cooking_screen) and game.model.orders[player_id].state == "cooking", "employee order timeout does not close player's minigame")
 	game.reset_run()
+	game.start_day()
 	game.model.request_customer()
 	for i in range(3): game.customers[game.model.next_order_id - 1]._process(10.0)
 	game.player.position = game.target_position("stove")
@@ -78,10 +82,12 @@ func _run() -> void:
 	game.model.advance(Day.PATIENCE + 0.1)
 	check(game.cooking_screen == null and game.model.cooking_order_id == 0, "timeout during cooking closes overlay and frees stove")
 	game.reset_run()
+	game.start_day()
 	game.model.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(game.model.ended and game.summary_panel.visible, "day summary appears")
 	game.reset_run()
-	check(not game.model.ended and game.model.coins == 0, "new day resets summary and money")
+	check(game.model.phase == "preopen" and game.model.coins == 0, "new game resets progress and enters preparation")
+	game.start_day()
 	# Real player collision and pause remain valid with new layout.
 	game.player.position = Vector2(75, 520)
 	Input.action_press("move_left")

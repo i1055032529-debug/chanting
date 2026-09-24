@@ -18,8 +18,13 @@ func fill(model, count: int) -> void:
 		check(model.request_customer(), "customer reserves free table")
 		check(model.seat_customer(model.next_order_id - 1), "reservation seats exactly once")
 
-func _run() -> void:
+func active_day():
 	var model = Day.new()
+	model.start_day()
+	return model
+
+func _run() -> void:
+	var model = active_day()
 	fill(model, 4)
 	check(not model.request_customer() and model.orders.size() == 4, "four table cap")
 	check(model.tables == [1, 2, 3, 4], "each table reserved uniquely")
@@ -45,7 +50,7 @@ func _run() -> void:
 	check(model.customer_departed(2) and model.orders[2].state == "dirty", "paid departure becomes dirty")
 	check(model.interact("table_2") and model.interact("sink"), "plate recycling releases table")
 	check(model.tables[1] == 0, "table reusable")
-	var stale = Day.new()
+	var stale = active_day()
 	fill(stale, 1)
 	stale.start_cooking()
 	var stale_attempt: int = stale.cooking_attempt_id
@@ -53,20 +58,20 @@ func _run() -> void:
 	check(stale.lost >= 1 and stale.cooking_order_id == 0, "cooking timeout releases stove")
 	check(not stale.complete_cooking(1, stale_attempt, RESULT), "expired result rejected")
 	check(stale.customer_departed(1), "timed out customer exits")
-	var ready = Day.new()
+	var ready = active_day()
 	fill(ready, 1)
 	ready.start_cooking()
 	ready.complete_cooking(1, ready.cooking_attempt_id, RESULT)
 	ready.advance(Day.PATIENCE + 0.1)
 	check(ready.pass_order_id == 0 and ready.lost >= 1, "ready food cleared after timeout")
-	var carried = Day.new()
+	var carried = active_day()
 	fill(carried, 1)
 	carried.start_cooking()
 	carried.complete_cooking(1, carried.cooking_attempt_id, RESULT)
 	carried.interact("pass")
 	carried.advance(Day.PATIENCE + 0.1)
 	check(carried.carrying == Day.Carry.NONE and carried.carried_order_id == 0, "held expired food is discarded")
-	var cancel = Day.new()
+	var cancel = active_day()
 	fill(cancel, 1)
 	cancel.start_cooking()
 	var old_attempt: int = cancel.cooking_attempt_id
@@ -74,7 +79,7 @@ func _run() -> void:
 	check(cancel.start_cooking() and not cancel.complete_cooking(1, old_attempt, RESULT), "retry invalidates first attempt")
 	cancel.reset()
 	check(not cancel.complete_cooking(1, old_attempt, RESULT), "reset rejects old result")
-	var day = Day.new()
+	var day = active_day()
 	fill(day, 1)
 	day.start_cooking()
 	day.complete_cooking(1, day.cooking_attempt_id, RESULT)
@@ -88,7 +93,7 @@ func _run() -> void:
 	check(day.day_closed and day.ended, "clean day closes automatically when all work is done")
 	day.advance(Day.CLOSING_GRACE)
 	check(day.ended and day.summary().served == 1, "day reaches summary after grace")
-	var cleaning = Day.new()
+	var cleaning = active_day()
 	fill(cleaning, 2)
 	for id in [1, 2]:
 		cleaning.selected_order_id = id
@@ -102,7 +107,7 @@ func _run() -> void:
 		cleaning.interact("sink")
 	check(cleaning.stains.size() == 1, "two completed tables generate one bounded stain")
 	check(cleaning.interact("stain_1") and cleaning.stains.is_empty(), "cleaning removes stain")
-	var low = Day.new()
+	var low = active_day()
 	fill(low, 1)
 	low.advance(Day.PATIENCE + 0.1)
 	check(low.lost == 1 and low.bad_reviews >= 1 and low.summary().reason == "等餐超时", "lost customer has concrete review reason")
