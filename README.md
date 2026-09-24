@@ -1,6 +1,6 @@
 # 一人食堂 · Chanting
 
-Godot 像素风餐厅经营游戏。已实现四桌营业、两道菜、独立烹饪小游戏、员工自动工作，以及阶段 4.1 的跨日资金和日结账本。
+Godot 像素风餐厅经营游戏。已实现四桌营业、两道菜、独立烹饪小游戏、员工自动工作，以及跨日经营、食材采购和菜单管理。
 
 ![阶段三实际运行画面](docs/stage-3-preview.webp)
 
@@ -19,7 +19,7 @@ Godot 像素风餐厅经营游戏。已实现四桌营业、两道菜、独立�
 | Esc | 暂停 / 继续 |
 | F1 | 开关调试信息；调试模式下 N 生成顾客、R 重新开店 |
 
-游戏从“开店准备”开始，点击“开始营业”后才会接待顾客。靠近烹饪台按 E 进入独立小游戏。小游戏中按住空格加热，松开降温，在翻炒游标的绿色区按 F，熟度达到 80 后按 E 出锅；B 可返回餐厅并保留订单。更高的品质会增加付款金额。
+游戏从“开店准备”开始。可先打开“采购与菜单”购买食材、调整在售菜品；点击“开始营业”后才会接待顾客。靠近烹饪台按 E 进入独立小游戏。小游戏中按住空格加热，松开降温，在翻炒游标的绿色区按 F，熟度达到 80 后按 E 出锅；B 可返回餐厅并保留订单。更高的品质会增加付款金额。
 
 ## 员工协作
 
@@ -31,10 +31,11 @@ Godot 像素风餐厅经营游戏。已实现四桌营业、两道菜、独立�
 
 - 四张桌子各有独立订单与耐心。顶部订单卡显示菜品、状态和剩余秒数；不足 12 秒会变红。
 - 菜品为香煎蛋饭（18 金币）和番茄炒面（24 金币）。炒面制作速度稍慢，锅里的像素表现不同。
+- 新游戏有 30 金币启动资金，每种食材各 8 份。蛋饭需米饭和鸡蛋，炒面需面条和番茄；顾客下单时预留，开火时消耗。库存不足或停售的菜不会被点到；无可售菜品时不能开店。没有可做的菜且买不起所缺食材时，每天可领取一次应急蛋饭食材。
 - 出餐台最多放两份菜；做菜开工时会预留出餐位置。每个角色一次只能拿一件物品。把菜送错桌会提示，食物不会丢失。
 - 顾客等餐超时会离店；制作中、出餐台和手中的失效食物会清理，不会长期占用炉灶或角色。
 - 顾客用餐后付款、评价并离店。靠近桌子收盘，送到回收台，桌子恢复可用；地面出现污渍时，空手靠近按 E 清洁。
-- 营业 180 秒，随后停止接待新顾客，并给 35 秒收尾。日结显示日初现金、营业收入、各类支出、日末现金，以及接待、评价和员工完成工作数。
+- 营业 180 秒，随后停止接待新顾客，并给 35 秒收尾。日结显示日初现金、营业收入、采购等支出、日末现金、食材消耗成本估计，以及接待、评价和员工完成工作数。
 - 点击“准备下一营业日”会保留金币、天数和员工安排，并清空当天的订单与任务；“新游戏”经确认后清空全部进度。目前尚未写入磁盘，退出程序后进度不会保留，本地存档安排在阶段 4.4。
 
 ## 图片和代码
@@ -48,7 +49,7 @@ Godot 像素风餐厅经营游戏。已实现四桌营业、两道菜、独立�
 - `scenes/furniture/`、`scenes/actors/`：可独立替换的家具和角色场景。
 - `scripts/service_model.gd`：保留阶段一单桌服务规则作为历史回归样本；当前游戏使用 `DayModel`。
 
-详见 [完整开发计划](docs/development-plan.md)、[阶段 4.1 实现说明](docs/stage-4-1.md)、[阶段三实现说明](docs/stage-3.md)、[烹饪小游戏说明](docs/cooking-minigame.md) 与 [图片替换说明](docs/image-assets.md)。
+详见 [完整开发计划](docs/development-plan.md)、[阶段 4.2 实现说明](docs/stage-4-2.md)、[阶段 4.1 实现说明](docs/stage-4-1.md)、[烹饪小游戏说明](docs/cooking-minigame.md) 与 [图片替换说明](docs/image-assets.md)。
 
 ## 验证
 
@@ -64,9 +65,10 @@ godot --headless --path . --script tests/test_employee_model.gd
 godot --headless --path . --script tests/test_employee.gd
 godot --headless --path . --script tests/test_employee_comparison.gd
 godot --headless --path . --script tests/test_multi_day.gd
+godot --headless --path . --script tests/test_inventory.gd
 ```
 
-macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。图形环境下运行 `godot --path . --script tests/capture_stage_4_1.gd` 可重新生成阶段 4.1 实际画面。GitHub Actions 对 `main` 的推送自动运行十组测试。
+macOS 可将 `godot` 替换为 `/Applications/Godot.app/Contents/MacOS/Godot`。图形环境下运行 `godot --path . --script tests/capture_stage_4_2.gd` 可重新生成采购和日结画面。GitHub Actions 对 `main` 的推送自动运行十一组测试。
 
 ## 分支
 

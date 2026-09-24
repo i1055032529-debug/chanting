@@ -31,6 +31,9 @@ var prompt: Label
 var pause_panel: Panel
 var preopen_panel: Panel
 var preopen_text: Label
+var store_panel: Panel
+var store_labels: Dictionary = {}
+var purchase_quantities := {"rice": 1, "egg": 1, "noodles": 1, "tomato": 1}
 var summary_panel: Panel
 var summary_text: Label
 var management_panel: Panel
@@ -184,6 +187,7 @@ func prepare_next_day() -> bool:
 func start_day() -> bool:
 	if not model.start_day(): return false
 	preopen_panel.hide()
+	store_panel.hide()
 	management_panel.hide()
 	player.locked = false
 	_refresh_ui()
@@ -200,6 +204,7 @@ func _clear_scene_day() -> void:
 		if is_instance_valid(stain_nodes[key]): stain_nodes[key].queue_free()
 	stain_nodes.clear()
 	management_panel.hide()
+	store_panel.hide()
 	player.global_position = $PlayerStart.global_position
 	player.velocity = Vector2.ZERO
 	player.locked = true
@@ -378,8 +383,10 @@ func _build_ui() -> void:
 	_child_label(preopen_panel, "开店准备", Vector2(34, 24), Vector2(550, 48), 30, GOLD)
 	preopen_text = _child_label(preopen_panel, "", Vector2(34, 86), Vector2(560, 120), 19, CREAM)
 	_button(preopen_panel, "开始营业", Rect2(34, 220, 562, 48), start_day)
-	_button(preopen_panel, "员工安排 · M", Rect2(34, 286, 265, 38), _toggle_management)
-	_button(preopen_panel, "开始新游戏", Rect2(331, 286, 265, 38), _open_reset)
+	_button(preopen_panel, "采购与菜单", Rect2(34, 286, 177, 38), _toggle_store)
+	_button(preopen_panel, "员工安排 · M", Rect2(226, 286, 177, 38), _toggle_management)
+	_button(preopen_panel, "开始新游戏", Rect2(418, 286, 178, 38), _open_reset)
+	_build_store_panel()
 	pause_panel = _panel(Rect2(425, 270, 430, 260), Color("38291f"))
 	pause_panel.visible = false
 	pause_panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -417,12 +424,85 @@ func _build_ui() -> void:
 	modal_layer.add_child(modal_root)
 	pause_panel.reparent(modal_root)
 	preopen_panel.reparent(modal_root)
+	store_panel.reparent(modal_root)
 	summary_panel.reparent(modal_root)
 	reset_dialog.reparent(modal_root)
 
 
+func _build_store_panel() -> void:
+	store_panel = _panel(Rect2(190, 165, 900, 510), Color("30291f"))
+	store_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	store_panel.hide()
+	_child_label(store_panel, "食材采购与菜单", Vector2(30, 18), Vector2(660, 45), 28, GOLD)
+	store_labels["overview"] = _child_label(store_panel, "", Vector2(30, 65), Vector2(820, 28), 16, CREAM)
+	for i in range(Model.INGREDIENTS.size()):
+		var ingredient: String = Model.INGREDIENTS.keys()[i]
+		var y := 107 + i * 56
+		store_labels["stock_" + ingredient] = _child_label(store_panel, "", Vector2(30, y), Vector2(395, 32), 17, CREAM)
+		store_labels["minus_" + ingredient] = _make_button(store_panel, "−", Rect2(430, y, 40, 32), func(): _adjust_purchase(ingredient, -1))
+		store_labels["quantity_" + ingredient] = _child_label(store_panel, "", Vector2(477, y), Vector2(48, 32), 17, CREAM)
+		store_labels["plus_" + ingredient] = _make_button(store_panel, "+", Rect2(530, y, 40, 32), func(): _adjust_purchase(ingredient, 1))
+		store_labels["subtotal_" + ingredient] = _child_label(store_panel, "", Vector2(584, y), Vector2(120, 32), 16, GOLD)
+		store_labels["buy_" + ingredient] = _make_button(store_panel, "购买", Rect2(720, y, 135, 32), func(): _buy_ingredient(ingredient))
+	_child_label(store_panel, "今日菜单", Vector2(30, 334), Vector2(270, 32), 22, GOLD)
+	for i in range(Model.RECIPE_IDS.size()):
+		var recipe_id: String = Model.RECIPE_IDS[i]
+		var y := 374 + i * 40
+		store_labels["menu_" + recipe_id] = _child_label(store_panel, "", Vector2(30, y), Vector2(620, 30), 17, CREAM)
+		store_labels["toggle_" + recipe_id] = _make_button(store_panel, "", Rect2(710, y, 145, 30), func(): _toggle_recipe(recipe_id))
+	store_labels["emergency"] = _make_button(store_panel, "应急补给 · 1 份蛋饭食材", Rect2(30, 462, 400, 34), _claim_emergency)
+	_button(store_panel, "返回开店准备", Rect2(596, 462, 259, 34), _toggle_store)
+
+
+func _adjust_purchase(ingredient: String, amount: int) -> void:
+	purchase_quantities[ingredient] = clampi(purchase_quantities[ingredient] + amount, 1, 20)
+	_refresh_store_panel()
+
+
+func _buy_ingredient(ingredient: String) -> void:
+	model.purchase(ingredient, purchase_quantities[ingredient])
+	_refresh_store_panel()
+
+
+func _toggle_recipe(recipe_id: String) -> void:
+	model.set_menu_enabled(recipe_id, not model.menu_enabled[recipe_id])
+	_refresh_store_panel()
+
+
+func _claim_emergency() -> void:
+	if not model.claim_emergency_supply():
+		_show_feedback("仅在没有可做的菜且买不起任何一份所缺食材时，每天可领取一次应急补给。")
+	_refresh_store_panel()
+
+
+func _toggle_store() -> void:
+	if model.phase != "preopen": return
+	store_panel.visible = not store_panel.visible
+	if store_panel.visible: management_panel.hide()
+	preopen_panel.visible = not store_panel.visible
+	_refresh_store_panel()
+
+
+func _refresh_store_panel() -> void:
+	if store_labels.is_empty(): return
+	store_labels.overview.text = "现金 %d 金币  ·  蛋饭可做 %d 份  ·  炒面可做 %d 份" % [model.coins, model.portions_available("rice"), model.portions_available("noodles")]
+	for ingredient: String in Model.INGREDIENTS:
+		var definition: Dictionary = Model.INGREDIENTS[ingredient]
+		store_labels["stock_" + ingredient].text = "%s  单价 %d   库存 %d / 预留 %d / 可用 %d" % [definition.name, definition.price, model.inventory[ingredient], model.reserved_inventory[ingredient], model.ingredient_available(ingredient)]
+		store_labels["quantity_" + ingredient].text = "×%d" % purchase_quantities[ingredient]
+		store_labels["subtotal_" + ingredient].text = "合计 %d" % (definition.price * purchase_quantities[ingredient])
+		store_labels["minus_" + ingredient].disabled = purchase_quantities[ingredient] <= 1
+		store_labels["plus_" + ingredient].disabled = purchase_quantities[ingredient] >= 20
+		store_labels["buy_" + ingredient].disabled = definition.price * purchase_quantities[ingredient] > model.coins
+	for recipe_id: String in Model.RECIPE_IDS:
+		store_labels["menu_" + recipe_id].text = "%s  ·  可做 %d 份" % [model.recipe_name(recipe_id), model.portions_available(recipe_id)]
+		store_labels["toggle_" + recipe_id].text = "在售" if model.menu_enabled[recipe_id] else "已停售"
+	store_labels.emergency.disabled = not model.emergency_available()
+
+
 func _refresh_ui() -> void:
 	if labels.is_empty(): return
+	_refresh_store_panel()
 	if model.phase == "summary" and summary_panel != null and summary_panel.visible:
 		summary_text.text = _format_summary(model.summary())
 	labels.title.text = "一人食堂 · 第 %d 天" % model.day_number
@@ -434,7 +514,7 @@ func _refresh_ui() -> void:
 	elif model.phase == "summary": labels.time.text = "今日结算"
 	else: labels.time.text = ("收尾 %02d:%02d" % [maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) / 60, maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) % 60]) if model.day_closed else ("营业 %02d:%02d" % [remaining / 60, remaining % 60])
 	if preopen_text != null:
-		preopen_text.text = "第 %d 天  ·  当前现金 %d 金币\n\n前一天的收入会保留到今天。\n准备就绪后开始营业；结算时查看资金变化。" % [model.day_number, model.coins]
+		preopen_text.text = "第 %d 天  ·  当前现金 %d 金币\n蛋饭可做 %d 份  ·  炒面可做 %d 份\n\n开店前采购食材、调整菜单；准备好后开始营业。" % [model.day_number, model.coins, model.portions_available("rice"), model.portions_available("noodles")]
 	labels.clean.text = "整洁 %d%%" % [roundi((1.0 - float(model.stains.size()) / Model.STAIN_LIMIT) * 100)]
 	labels.clean.add_theme_color_override("font_color", GREEN if model.stains.size() <= 1 else RED)
 	labels.employee.text = "员工：%s%s" % [employee.status, (" · %s" % employee.failure_reason) if employee.failure_reason != "" and employee.failure_reason != employee.status else ""]
@@ -463,7 +543,7 @@ func _show_summary(result: Dictionary) -> void:
 func _format_summary(result: Dictionary) -> String:
 	var expenses: Dictionary = result.expenses
 	var spending: int = expenses.purchase + expenses.wages + expenses.furniture + expenses.equipment + expenses.expansion
-	return "第 %d 天  日初 %d  +营业 %d  -支出 %d  =日末 %d\n现金变化 %+d 金币\n采购 %d · 工资 %d · 家具 %d · 设备 %d · 扩建 %d\n完成 %d 桌 · 流失 %d 位 · 好评 %d · 差评 %d\n平均等餐 %.1f 秒 · 剩余污渍 %d\n员工完成：做菜 %d · 上菜 %d · 收盘 %d · 清洁 %d\n%s" % [result.day, result.opening_cash, result.income, spending, result.coins, result.cash_change, expenses.purchase, expenses.wages, expenses.furniture, expenses.equipment, expenses.expansion, result.served, result.lost, result.good_reviews, result.bad_reviews, result.average_wait, result.stains, employee.tasks_completed.cook, employee.tasks_completed.serve, employee.tasks_completed.clear, employee.tasks_completed.clean, ("%d 位顾客因等餐超时离店。" % result.lost) if result.lost > 0 else "今日营业已完成。"]
+	return "第 %d 天  日初 %d  +营业 %d  -支出 %d  =日末 %d\n现金变化 %+d · 食材消耗成本 %d · 估算经营收益 %d\n采购 %d · 工资 %d · 家具 %d · 设备 %d · 扩建 %d\n完成 %d 桌 · 流失 %d 位 · 好评 %d · 差评 %d\n平均等餐 %.1f 秒 · 剩余污渍 %d\n员工完成：做菜 %d · 上菜 %d · 收盘 %d · 清洁 %d\n%s" % [result.day, result.opening_cash, result.income, spending, result.coins, result.cash_change, result.ingredient_cost, result.operating_profit, expenses.purchase, expenses.wages, expenses.furniture, expenses.equipment, expenses.expansion, result.served, result.lost, result.good_reviews, result.bad_reviews, result.average_wait, result.stains, employee.tasks_completed.cook, employee.tasks_completed.serve, employee.tasks_completed.clear, employee.tasks_completed.clean, ("%d 位顾客因等餐超时离店。" % result.lost) if result.lost > 0 else "今日营业已完成。"]
 
 
 func _toggle_pause() -> void:
@@ -483,6 +563,7 @@ func _open_reset() -> void:
 func _toggle_management() -> void:
 	if model.phase == "summary" or is_instance_valid(cooking_screen): return
 	management_panel.visible = not management_panel.visible
+	if management_panel.visible: store_panel.hide()
 	if model.phase == "preopen": preopen_panel.visible = not management_panel.visible
 	_refresh_employee_panel()
 

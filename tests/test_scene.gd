@@ -45,7 +45,7 @@ func _run() -> void:
 	game.player.position = game.target_position("table_2")
 	check(game.try_interact("table_2"), "correct table receives food")
 	game.model.advance(Day.EAT_SECONDS)
-	check(game.model.coins == 24 + preload("res://scripts/cooking/cooking_model.gd").bonus_for_result(result), "quality and recipe price settle once")
+	check(game.model.coins == Day.STARTING_CASH + 24 + preload("res://scripts/cooking/cooking_model.gd").bonus_for_result(result), "quality and recipe price settle once")
 	for i in range(3): game.customers[2]._process(10.0)
 	check(game.model.orders[2].state == "dirty", "customer departure creates clearing task")
 	check(game.try_interact("table_2"), "player collects plate")
@@ -86,7 +86,7 @@ func _run() -> void:
 	game.model.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(game.model.ended and game.summary_panel.visible, "day summary appears")
 	game.reset_run()
-	check(game.model.phase == "preopen" and game.model.coins == 0, "new game resets progress and enters preparation")
+	check(game.model.phase == "preopen" and game.model.coins == Day.STARTING_CASH, "new game resets progress and enters preparation")
 	game.start_day()
 	# Real player collision and pause remain valid with new layout.
 	game.player.position = Vector2(75, 520)

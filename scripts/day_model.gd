@@ -15,6 +15,14 @@ const TABLE_COUNT := 4
 const STOVES := ["stove", "stove_2"]
 const PASS_CAPACITY := 2
 const EXPENSE_KINDS := ["purchase", "wages", "furniture", "equipment", "expansion"]
+const STARTING_CASH := 30
+const INGREDIENTS := {
+	"rice": {"name": "米饭", "price": 2, "starting": 8},
+	"egg": {"name": "鸡蛋", "price": 3, "starting": 8},
+	"noodles": {"name": "面条", "price": 3, "starting": 8},
+	"tomato": {"name": "番茄", "price": 4, "starting": 8},
+}
+const RECIPE_IDS := ["rice", "noodles"]
 const DAY_SECONDS := 180.0
 const CLOSING_GRACE := 35.0
 const PATIENCE := 48.0
@@ -26,21 +34,27 @@ const WAVE_SECONDS := 70.0
 const PEAK_START := 25.0
 const PEAK_END := 55.0
 const RECIPES := {
-	"rice": {"name": "香煎蛋饭", "price": 18, "speed": 1.0, "color": Color("e7bf70")},
-	"noodles": {"name": "番茄炒面", "price": 24, "speed": 0.82, "color": Color("d97853")},
+	"rice": {"name": "香煎蛋饭", "price": 18, "speed": 1.0, "color": Color("e7bf70"), "ingredients": {"rice": 1, "egg": 1}},
+	"noodles": {"name": "番茄炒面", "price": 24, "speed": 0.82, "color": Color("d97853"), "ingredients": {"noodles": 1, "tomato": 1}},
 }
 const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
 
 var phase := "preopen"
 var day_number := 1
-var day_opening_cash := 0
+var day_opening_cash := STARTING_CASH
 var ledger: Array[Dictionary] = []
 var day_reports: Array[Dictionary] = []
 var transaction_keys: Dictionary = {}
 var elapsed := 0.0
 var day_closed := false
 var ended := false
-var coins := 0
+var coins := STARTING_CASH
+var inventory: Dictionary = {}
+var reserved_inventory: Dictionary = {}
+var menu_enabled := {"rice": true, "noodles": true}
+var purchase_sequence := 1
+var emergency_uses_today := 0
+var ingredient_consumed_cost := 0
 var served := 0
 var lost := 0
 var good_reviews := 0
@@ -70,6 +84,112 @@ var cook_stations: Dictionary = {}
 var employee_carrying: Carry = Carry.NONE
 var employee_carried_order_id := 0
 var employee_carried_table_id := -1
+
+
+func _init() -> void:
+	_reset_inventory()
+
+
+func _reset_inventory() -> void:
+	inventory.clear()
+	reserved_inventory.clear()
+	for ingredient: String in INGREDIENTS:
+		inventory[ingredient] = INGREDIENTS[ingredient].starting
+		reserved_inventory[ingredient] = 0
+
+
+func ingredient_available(id: String) -> int:
+	if not INGREDIENTS.has(id): return 0
+	return maxi(0, inventory[id] - reserved_inventory[id])
+
+
+func portions_available(recipe_id: String) -> int:
+	if not RECIPES.has(recipe_id): return 0
+	var portions := 999999
+	for ingredient: String in RECIPES[recipe_id].ingredients:
+		portions = mini(portions, ingredient_available(ingredient) / int(RECIPES[recipe_id].ingredients[ingredient]))
+	return portions
+
+
+func purchase(ingredient_id: String, quantity: int) -> bool:
+	if phase != "preopen" or not INGREDIENTS.has(ingredient_id) or quantity <= 0 or quantity > 99: return false
+	var cost: int = INGREDIENTS[ingredient_id].price * quantity
+	if not spend("purchase", cost, "purchase:%d" % purchase_sequence):
+		return _reject("采购失败：余额不足。")
+	purchase_sequence += 1
+	inventory[ingredient_id] += quantity
+	feedback.emit("购入%s ×%d，支出 %d 金币。" % [INGREDIENTS[ingredient_id].name, quantity, cost])
+	changed.emit()
+	return true
+
+
+func set_menu_enabled(recipe_id: String, enabled_menu: bool) -> bool:
+	if phase != "preopen" or not RECIPES.has(recipe_id): return false
+	if menu_enabled[recipe_id] == enabled_menu: return false
+	if not enabled_menu:
+		var remaining := false
+		for other: String in RECIPE_IDS:
+			if other != recipe_id and menu_enabled[other]: remaining = true
+		if not remaining: return _reject("菜单至少保留一道菜。")
+	menu_enabled[recipe_id] = enabled_menu
+	changed.emit()
+	return true
+
+
+func emergency_available() -> bool:
+	if phase != "preopen" or emergency_uses_today >= 1: return false
+	var cheapest_completion := 999999
+	for recipe_id: String in RECIPE_IDS:
+		if portions_available(recipe_id) > 0: return false
+		var missing_cost := 0
+		for ingredient: String in RECIPES[recipe_id].ingredients:
+			var required: int = RECIPES[recipe_id].ingredients[ingredient]
+			missing_cost += maxi(0, required - ingredient_available(ingredient)) * int(INGREDIENTS[ingredient].price)
+		cheapest_completion = mini(cheapest_completion, missing_cost)
+	return coins < cheapest_completion
+
+
+func claim_emergency_supply() -> bool:
+	if not emergency_available(): return false
+	inventory.rice += 1
+	inventory.egg += 1
+	emergency_uses_today += 1
+	menu_enabled.rice = true
+	feedback.emit("获得一份应急蛋饭食材。")
+	changed.emit()
+	return true
+
+
+func _reserve_recipe(recipe_id: String) -> bool:
+	if portions_available(recipe_id) <= 0: return false
+	for ingredient: String in RECIPES[recipe_id].ingredients:
+		reserved_inventory[ingredient] += int(RECIPES[recipe_id].ingredients[ingredient])
+	changed.emit()
+	return true
+
+
+func _release_order_ingredients(id: int) -> void:
+	if not orders.has(id) or not orders[id].ingredients_reserved: return
+	for ingredient: String in RECIPES[orders[id].recipe].ingredients:
+		reserved_inventory[ingredient] -= int(RECIPES[orders[id].recipe].ingredients[ingredient])
+	orders[id].ingredients_reserved = false
+	changed.emit()
+
+
+func _consume_order_ingredients(id: int) -> bool:
+	if not orders.has(id) or not orders[id].ingredients_reserved: return false
+	for ingredient: String in RECIPES[orders[id].recipe].ingredients:
+		var quantity: int = RECIPES[orders[id].recipe].ingredients[ingredient]
+		if inventory[ingredient] < quantity or reserved_inventory[ingredient] < quantity: return false
+	for ingredient: String in RECIPES[orders[id].recipe].ingredients:
+		var quantity: int = RECIPES[orders[id].recipe].ingredients[ingredient]
+		inventory[ingredient] -= quantity
+		reserved_inventory[ingredient] -= quantity
+		ingredient_consumed_cost += quantity * int(INGREDIENTS[ingredient].price)
+	orders[id].ingredients_reserved = false
+	orders[id].ingredients_consumed = true
+	changed.emit()
+	return true
 
 
 func advance(delta: float) -> void:
@@ -114,9 +234,16 @@ func request_customer() -> bool:
 			break
 	if table_id < 0: return false
 	var id := next_order_id
+	var preferred := "rice" if id % 2 == 1 else "noodles"
+	var alternatives := [preferred, "noodles" if preferred == "rice" else "rice"]
+	var recipe_id := ""
+	for candidate in alternatives:
+		if menu_enabled[candidate] and portions_available(candidate) > 0:
+			recipe_id = candidate
+			break
+	if recipe_id == "" or not _reserve_recipe(recipe_id): return false
 	next_order_id += 1
-	var recipe_id := "rice" if id % 2 == 1 else "noodles"
-	orders[id] = {"id": id, "table": table_id, "recipe": recipe_id, "state": "arriving", "waited": 0.0, "eat_clock": 0.0, "score": 0, "bonus": 0, "review": "", "cook_attempt": 0}
+	orders[id] = {"id": id, "table": table_id, "recipe": recipe_id, "state": "arriving", "waited": 0.0, "eat_clock": 0.0, "score": 0, "bonus": 0, "review": "", "cook_attempt": 0, "ingredients_reserved": true, "ingredients_consumed": false}
 	tables[table_id] = id
 	customer_requested.emit(id, table_id)
 	changed.emit()
@@ -148,6 +275,13 @@ func customer_departed(id: int) -> bool:
 	return true
 
 
+func cancel_order(id: int) -> bool:
+	if phase != "open" or not orders.has(id): return false
+	if orders[id].state not in ["arriving", "waiting", "cooking", "ready", "carried"]: return false
+	_timeout(id)
+	return true
+
+
 func select_next() -> int:
 	var choices: Array[int] = []
 	for id: int in orders:
@@ -174,7 +308,7 @@ func task_available(kind: String, id: int, station: String = "") -> bool:
 	if phase != "open" or ended or task_owner(kind, id) != "": return false
 	match kind:
 		"cook":
-			if not orders.has(id) or orders[id].state != "waiting" or _output_occupancy() >= PASS_CAPACITY: return false
+			if not orders.has(id) or orders[id].state != "waiting" or not orders[id].ingredients_reserved or _output_occupancy() >= PASS_CAPACITY: return false
 			return _free_stove(station) != ""
 		"serve": return orders.has(id) and orders[id].state == "ready" and id in pass_order_ids
 		"clear": return orders.has(id) and orders[id].state == "dirty"
@@ -194,7 +328,7 @@ func claim_task(kind: String, id: int, actor: String, station: String = "") -> b
 	if owner != "":
 		if actor != "player" or owner != "employee" or task_active.get(key, false): return false
 		if kind == "cook":
-			if not orders.has(id) or orders[id].state != "waiting": return false
+			if not orders.has(id) or orders[id].state != "waiting" or not orders[id].ingredients_reserved: return false
 			if station != "" and station != cook_stations.get(id, ""):
 				if _free_stove(station) == "": return false
 				cook_stations[id] = station
@@ -270,8 +404,8 @@ func available_tasks() -> Array[Dictionary]:
 func start_cooking(station: String = "stove") -> bool:
 	if carrying != Carry.NONE: return _reject("双手已占用，先交付手中物品。")
 	var id := selected_order_id
-	if not orders.has(id) or orders[id].state != "waiting": id = most_urgent_waiting()
-	if id == 0: return _reject("当前没有等待制作的订单。")
+	if not orders.has(id) or orders[id].state != "waiting" or not orders[id].ingredients_reserved: id = most_urgent_waiting()
+	if id == 0: return _reject("当前没有食材充足的待制作订单。")
 	if not claim_task("cook", id, "player", station):
 		return _reject("这个炉灶已在做菜，或两个出餐位都已安排菜品。")
 	return start_cooking_as(id, "player")
@@ -280,6 +414,7 @@ func start_cooking(station: String = "stove") -> bool:
 func start_cooking_as(id: int, actor: String) -> bool:
 	if task_owner("cook", id) != actor or not cook_stations.has(id) or not orders.has(id) or orders[id].state != "waiting":
 		return false
+	if not _consume_order_ingredients(id): return false
 	if actor == "player": selected_order_id = id
 	var attempt := next_attempt_id
 	next_attempt_id += 1
@@ -313,7 +448,11 @@ func cancel_cooking(id: int, attempt: int) -> bool:
 	orders[id].state = "waiting"
 	release_task("cook", id)
 	_sync_cooking_primary()
-	feedback.emit("本次烹饪已取消，订单仍在。")
+	if _reserve_recipe(orders[id].recipe):
+		orders[id].ingredients_reserved = true
+		feedback.emit("本次烹饪已取消，已重新预留一份食材。")
+	else:
+		feedback.emit("本次烹饪已取消；食材已消耗，库存不足以重做。")
 	changed.emit()
 	return true
 
@@ -452,7 +591,7 @@ func most_urgent_waiting() -> int:
 	var best_id := 0
 	var best_time := -1.0
 	for id: int in orders:
-		if orders[id].state == "waiting" and orders[id].waited > best_time:
+		if orders[id].state == "waiting" and orders[id].ingredients_reserved and orders[id].waited > best_time:
 			best_time = orders[id].waited
 			best_id = id
 	return best_id
@@ -471,11 +610,15 @@ func summary() -> Dictionary:
 	var totals := {"income": 0, "purchase": 0, "wages": 0, "furniture": 0, "equipment": 0, "expansion": 0}
 	for entry in ledger:
 		totals[entry.kind] += absi(entry.amount)
-	return {"day": day_number, "opening_cash": day_opening_cash, "coins": coins, "cash_change": coins - day_opening_cash, "income": totals.income, "expenses": {"purchase": totals.purchase, "wages": totals.wages, "furniture": totals.furniture, "equipment": totals.equipment, "expansion": totals.expansion}, "ledger": ledger.duplicate(true), "served": served, "lost": lost, "good_reviews": good_reviews, "bad_reviews": bad_reviews, "stains": stains.size(), "elapsed": elapsed, "payments": payments.duplicate(), "reviews": reviews.duplicate(true), "average_wait": _average_wait(), "reason": "等餐超时" if lost > 0 else "营业完成"}
+	return {"day": day_number, "opening_cash": day_opening_cash, "coins": coins, "cash_change": coins - day_opening_cash, "income": totals.income, "expenses": {"purchase": totals.purchase, "wages": totals.wages, "furniture": totals.furniture, "equipment": totals.equipment, "expansion": totals.expansion}, "ingredient_cost": ingredient_consumed_cost, "operating_profit": totals.income - ingredient_consumed_cost - totals.wages, "ledger": ledger.duplicate(true), "served": served, "lost": lost, "good_reviews": good_reviews, "bad_reviews": bad_reviews, "stains": stains.size(), "elapsed": elapsed, "payments": payments.duplicate(), "reviews": reviews.duplicate(true), "average_wait": _average_wait(), "reason": "等餐超时" if lost > 0 else "营业完成"}
 
 
 func start_day() -> bool:
 	if phase != "preopen": return false
+	var can_serve := false
+	for recipe_id: String in RECIPE_IDS:
+		if menu_enabled[recipe_id] and portions_available(recipe_id) > 0: can_serve = true
+	if not can_serve: return _reject("没有可制作的在售菜品；请采购食材、调整菜单或领取应急补给。")
 	phase = "open"
 	feedback.emit("第 %d 天营业开始。" % day_number)
 	changed.emit()
@@ -496,8 +639,11 @@ func next_day() -> bool:
 
 func new_game() -> void:
 	day_number = 1
-	coins = 0
-	day_opening_cash = 0
+	coins = STARTING_CASH
+	day_opening_cash = STARTING_CASH
+	_reset_inventory()
+	menu_enabled = {"rice": true, "noodles": true}
+	purchase_sequence = 1
 	ledger.clear()
 	day_reports.clear()
 	transaction_keys.clear()
@@ -551,6 +697,9 @@ func _clear_day() -> void:
 	cooking_order_id = 0
 	cooking_attempt_id = 0
 	stains.clear()
+	for ingredient: String in INGREDIENTS: reserved_inventory[ingredient] = 0
+	emergency_uses_today = 0
+	ingredient_consumed_cost = 0
 	task_owners.clear()
 	task_active.clear()
 	cook_stations.clear()
@@ -565,8 +714,9 @@ func _clear_day() -> void:
 func _timeout(id: int) -> void:
 	if not orders.has(id): return
 	var order: Dictionary = orders[id]
-	if order.state not in ["waiting", "cooking", "ready", "carried"]: return
+	if order.state not in ["arriving", "waiting", "cooking", "ready", "carried"]: return
 	var was_cooking: bool = order.state == "cooking" and cook_stations.has(id)
+	_release_order_ingredients(id)
 	order.state = "leaving_lost"
 	lost += 1
 	bad_reviews += 1
@@ -620,7 +770,7 @@ func _make_stain(table_id: int) -> void:
 
 func _force_finish() -> void:
 	for id: int in orders.keys():
-		if orders[id].state in ["waiting", "cooking", "ready", "carried"]: _timeout(id)
+		if orders[id].state in ["arriving", "waiting", "cooking", "ready", "carried"]: _timeout(id)
 	_finish_day()
 
 
