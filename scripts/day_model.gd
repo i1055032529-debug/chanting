@@ -47,7 +47,6 @@ const RECIPES := {
 const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
 const Layout = preload("res://scripts/layout_rules.gd")
 const STARTING_TABLE_POSITIONS: Array[Vector2] = [Vector2(530, 460), Vector2(900, 460), Vector2(530, 575), Vector2(900, 575)]
-const FIFTH_TABLE_POSITION := Vector2(715, 575)
 const TABLE_PRICE := 40
 const EQUIPMENT_PRICE := 70
 const EQUIPMENT_SPEED_BONUS := 1.25
@@ -164,8 +163,11 @@ func move_device(id: String, destination: Vector2) -> bool:
 	return true
 
 
-func buy_table(destination: Vector2 = FIFTH_TABLE_POSITION) -> bool:
-	if phase != "preopen" or table_count() >= TABLE_COUNT + 1: return false
+func buy_table(destination: Vector2 = Vector2.ZERO) -> bool:
+	if phase != "preopen": return false
+	if spendable_cash() < TABLE_PRICE: return _reject("购买餐桌失败：可用金币不足。")
+	if destination == Vector2.ZERO: destination = Layout.free_table_position(table_positions, device_positions)
+	if destination == Vector2.ZERO: return _reject("餐厅暂无可摆放餐桌的位置；请调整布局。")
 	var candidate := table_positions.duplicate()
 	candidate.append(destination)
 	if not Layout.valid(candidate, device_positions): return _reject("新增餐桌位置不可用：请留出通路。")

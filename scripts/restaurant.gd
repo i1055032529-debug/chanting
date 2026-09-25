@@ -12,6 +12,7 @@ const StainScript = preload("res://scripts/stain.gd")
 const EmployeeScene = preload("res://scenes/actors/employee.tscn")
 const Layout = preload("res://scripts/layout_rules.gd")
 const INTERACT_DISTANCE := 55.0
+const ORDER_CARDS_PER_PAGE := 5
 const CREAM := Color("f4e5cd")
 const MUTED := Color("bea993")
 const GOLD := Color("edbc72")
@@ -34,6 +35,10 @@ var font: SystemFont
 var ui: Control
 var labels: Dictionary = {}
 var order_cards: Array[Label] = []
+var order_page := 0
+var order_page_label: Label
+var order_previous_button: Button
+var order_next_button: Button
 var prompt: Label
 var pause_panel: Panel
 var preopen_panel: Panel
@@ -153,6 +158,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("select_order") and not event.is_echo() and model.phase == "open":
 		var id := model.select_next()
+		if id != 0:
+			order_page = floori(float(model.orders[id].table) / ORDER_CARDS_PER_PAGE)
+			_layout_order_cards()
+			_refresh_ui()
 		_show_feedback("已选中订单 #%d，%02d 号桌。" % [id, model.orders[id].table + 1] if id != 0 else "当前没有待做订单。")
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("employee_menu") and not event.is_echo():
@@ -317,17 +326,30 @@ func _sync_layout_nodes() -> void:
 func _layout_order_cards() -> void:
 	if order_card_panels.is_empty(): return
 	var count := model.table_count()
-	var stride := 250 if count > 4 else 312
-	var width := 242 if count > 4 else 296
+	var page_count := maxi(1, ceili(float(count) / ORDER_CARDS_PER_PAGE))
+	order_page = clampi(order_page, 0, page_count - 1)
+	var has_pages := page_count > 1
+	order_page_label.text = "订单 %d/%d 页" % [order_page + 1, page_count]
+	order_page_label.visible = has_pages
+	order_previous_button.visible = has_pages
+	order_next_button.visible = has_pages
+	order_previous_button.disabled = order_page == 0
+	order_next_button.disabled = order_page == page_count - 1
 	for i in range(order_card_panels.size()):
-		var visible_card := i < count
+		var visible_card := order_page * ORDER_CARDS_PER_PAGE + i < count
 		order_card_panels[i].visible = visible_card
 		order_cards[i].visible = visible_card
 		if visible_card:
-			order_card_panels[i].position.x = 26 + i * stride
-			order_card_panels[i].size.x = width
+			order_card_panels[i].position.x = 40 + i * 240
+			order_card_panels[i].size.x = 232
 			order_cards[i].position.x = order_card_panels[i].position.x + 13
-			order_cards[i].size.x = width - 24
+			order_cards[i].size.x = 208
+
+
+func _change_order_page(delta: int) -> void:
+	order_page += delta
+	_layout_order_cards()
+	_refresh_ui()
 
 
 func _spawn_customer(id: int, table_id: int) -> void:
@@ -443,10 +465,13 @@ func _build_ui() -> void:
 	_label("employee", "员工：待命", Vector2(29, 58), Vector2(415, 25), 14, GREEN)
 	_label("capacity", "", Vector2(452, 58), Vector2(575, 25), 14, CREAM)
 	_button(ui, "M · 员工管理", Rect2(1044, 56, 208, 26), _toggle_management)
-	for i in range(Model.TABLE_COUNT + 1):
-		var x := 26 + i * 312
-		order_card_panels.append(_panel(Rect2(x, 86, 296, 66), Color("493321")))
-		var card := _label("card%d" % i, "%02d 号桌  ·  空闲" % (i + 1), Vector2(x + 13, 92), Vector2(272, 57), 16, CREAM)
+	order_page_label = _label("order_page", "", Vector2(1090, 152), Vector2(135, 17), 12, MUTED)
+	order_previous_button = _make_button(ui, "‹", Rect2(4, 102, 31, 32), func(): _change_order_page(-1))
+	order_next_button = _make_button(ui, "›", Rect2(1245, 102, 31, 32), func(): _change_order_page(1))
+	for i in range(ORDER_CARDS_PER_PAGE):
+		var x := 40 + i * 240
+		order_card_panels.append(_panel(Rect2(x, 86, 232, 66), Color("493321")))
+		var card := _label("card%d" % i, "%02d 号桌  ·  空闲" % (i + 1), Vector2(x + 13, 92), Vector2(208, 57), 15, CREAM)
 		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		order_cards.append(card)
 	_layout_order_cards()
@@ -631,11 +656,15 @@ func _layout_device_id() -> String:
 
 
 func _begin_layout_preview(new_table: bool) -> void:
-	if model.phase != "preopen" or layout_editing or (new_table and model.table_count() >= Model.TABLE_COUNT + 1): return
+	if model.phase != "preopen" or layout_editing: return
+	var free_position := Layout.free_table_position(model.table_positions, model.device_positions) if new_table else Vector2.ZERO
+	if new_table and free_position == Vector2.ZERO:
+		model.feedback.emit("餐厅暂无可摆放餐桌的位置；请调整布局。")
+		return
 	layout_new_table = new_table
 	layout_editing = true
 	var device_id := "" if new_table else _layout_device_id()
-	layout_preview_position = Model.FIFTH_TABLE_POSITION if new_table else model.device_positions[device_id] if device_id != "" else model.table_positions[layout_selected]
+	layout_preview_position = free_position if new_table else model.device_positions[device_id] if device_id != "" else model.table_positions[layout_selected]
 	if not new_table:
 		if device_id != "": stations[device_id].visible = false
 		else:
@@ -725,8 +754,8 @@ func _refresh_layout_panel() -> void:
 	layout_labels.previous.disabled = layout_editing or layout_selected == 0
 	layout_labels.next.disabled = layout_editing or layout_selected >= total - 1
 	layout_labels.move.disabled = layout_editing
-	layout_labels.buy.text = "购买第 5 张桌 · %d 金币" % Model.TABLE_PRICE if model.table_count() <= Model.TABLE_COUNT else "餐桌已购齐"
-	layout_labels.buy.disabled = layout_editing or model.table_count() > Model.TABLE_COUNT or model.spendable_cash() < Model.TABLE_PRICE
+	layout_labels.buy.text = "购买第 %d 张桌 · %d 金币" % [model.table_count() + 1, Model.TABLE_PRICE]
+	layout_labels.buy.disabled = layout_editing or model.spendable_cash() < Model.TABLE_PRICE
 	layout_labels.upgrade.text = "烹饪加速 25%% · %d 金币" % Model.EQUIPMENT_PRICE if model.equipment_level == 0 else "设备已升级 · 制作提速 25%"
 	layout_labels.upgrade.disabled = layout_editing or model.equipment_level > 0 or model.spendable_cash() < Model.EQUIPMENT_PRICE
 	for key in ["left", "right", "up", "down", "cancel"]: layout_labels[key].disabled = not layout_editing
@@ -828,9 +857,11 @@ func _refresh_ui() -> void:
 	for recipe_id: String in Model.RECIPE_IDS:
 		portions.append("%s %d" % [model.recipe_name(recipe_id), model.portions_available(recipe_id)])
 	labels.capacity.text = "剩余可做：" + " · ".join(portions)
-	for i in range(model.table_count()):
+	for slot in range(order_cards.size()):
+		var i := order_page * ORDER_CARDS_PER_PAGE + slot
+		if i >= model.table_count(): continue
 		var id: int = model.tables[i]
-		var card := order_cards[i]
+		var card := order_cards[slot]
 		if id == 0 or not model.orders.has(id):
 			card.text = "%02d 号桌  ·  空闲" % (i + 1)
 			card.add_theme_color_override("font_color", MUTED)

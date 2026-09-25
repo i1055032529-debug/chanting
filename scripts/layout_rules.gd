@@ -14,6 +14,21 @@ const DEVICE_IDS := ["stove", "stove_2", "pass", "sink"]
 const DEFAULT_DEVICES := {"stove": Vector2(635, 384), "stove_2": Vector2(765, 384), "pass": Vector2(900, 384), "sink": Vector2(1100, 384)}
 
 
+static func free_table_position(positions: Array[Vector2], devices: Dictionary = DEFAULT_DEVICES) -> Vector2:
+	var candidate: Array[Vector2] = positions.duplicate()
+	for preferred in [Vector2(715, 575), Vector2(715, 460)]:
+		candidate.append(preferred)
+		if valid(candidate, devices): return preferred
+		candidate.pop_back()
+	for y in range(440, 621, 20):
+		for x in range(380, 1121, 20):
+			var position := Vector2(x, y)
+			candidate.append(position)
+			if valid(candidate, devices): return position
+			candidate.pop_back()
+	return Vector2.ZERO
+
+
 static func table_footprints(center: Vector2) -> Array[Rect2]:
 	return [Rect2(center + Vector2(-60, -44), Vector2(120, 52)), Rect2(center + Vector2(76, -30), Vector2(48, 38))]
 
