@@ -2,35 +2,44 @@ class_name LayoutRules
 extends RefCounted
 ## Placement uses the same furniture footprints as the scene, plus walking clearance.
 
-const ROOM := Rect2(310, 445, 810, 185)
+const TABLE_ROOM := Rect2(305, 420, 825, 210)
+const DEVICE_ROOM := Rect2(305, 365, 825, 265)
 const GRID_ORIGIN := Vector2(320, 300)
 const CELL := 10.0
 const GRID_SIZE := Vector2i(90, 38)
-const FIXED := [
-	Rect2(50, 293, 242, 120),
-	Rect2(575, 340, 120, 52),
-	Rect2(705, 340, 120, 52),
-	Rect2(840, 340, 120, 52),
-	Rect2(1040, 340, 120, 52),
-]
-const WORK_POINTS := [Vector2(635, 414), Vector2(765, 414), Vector2(900, 414), Vector2(1100, 414)]
+const REGISTER := Rect2(50, 293, 242, 120)
+const DOOR_CLEAR := Rect2(335, 300, 110, 105)
+const SPAWN_POINTS := [Vector2(500, 520), Vector2(375, 570), Vector2(405, 570), Vector2(435, 570)]
+const DEVICE_IDS := ["stove", "stove_2", "pass", "sink"]
+const DEFAULT_DEVICES := {"stove": Vector2(635, 384), "stove_2": Vector2(765, 384), "pass": Vector2(900, 384), "sink": Vector2(1100, 384)}
 
 
 static func table_footprints(center: Vector2) -> Array[Rect2]:
 	return [Rect2(center + Vector2(-60, -44), Vector2(120, 52)), Rect2(center + Vector2(76, -30), Vector2(48, 38))]
 
 
-static func valid(positions: Array[Vector2]) -> bool:
-	if positions.is_empty(): return false
-	var obstacles: Array[Rect2] = []
-	for fixed in FIXED: obstacles.append(fixed)
+static func device_footprint(center: Vector2) -> Rect2:
+	return Rect2(center + Vector2(-60, -44), Vector2(120, 52))
+
+
+static func valid(positions: Array[Vector2], devices: Dictionary = DEFAULT_DEVICES) -> bool:
+	if positions.is_empty() or devices.size() != DEVICE_IDS.size(): return false
+	var obstacles: Array[Rect2] = [REGISTER]
 	for center in positions:
-		if not ROOM.has_point(center): return false
+		if not TABLE_ROOM.has_point(center): return false
 		for footprint in table_footprints(center):
-			if footprint.position.x < 305.0 or footprint.end.x > 1224.0 or footprint.position.y < 300.0 or footprint.end.y > 665.0: return false
-			for obstacle in obstacles:
-				if footprint.intersects(obstacle): return false
+			if not _fits(footprint, obstacles): return false
 			obstacles.append(footprint)
+	for id in DEVICE_IDS:
+		if not devices.has(id): return false
+		var center: Vector2 = devices[id]
+		if not DEVICE_ROOM.has_point(center): return false
+		var footprint := device_footprint(center)
+		if not _fits(footprint, obstacles): return false
+		obstacles.append(footprint)
+	for point in SPAWN_POINTS:
+		for obstacle in obstacles:
+			if obstacle.has_point(point): return false
 	var visited := {}
 	var queue: Array[Vector2i] = [Vector2i(5, 1)] # Entrance-side floor, near (370, 310).
 	if _blocked(queue[0], obstacles): return false
@@ -44,7 +53,9 @@ static func valid(positions: Array[Vector2]) -> bool:
 			if visited.has(next) or _blocked(next, obstacles): continue
 			visited[next] = true
 			queue.append(next)
-	for point in WORK_POINTS:
+	for id in DEVICE_IDS:
+		if not _near_reachable(devices[id] + Vector2(0, 30), visited): return false
+	for point in SPAWN_POINTS:
 		if not _near_reachable(point, visited): return false
 	for center in positions:
 		if not _near_reachable(center + Vector2(0, 30), visited): return false
@@ -52,11 +63,12 @@ static func valid(positions: Array[Vector2]) -> bool:
 	return true
 
 
-static func customer_route(positions: Array[Vector2], destination: Vector2) -> Array[Vector2]:
-	var obstacles: Array[Rect2] = []
-	for fixed in FIXED: obstacles.append(fixed)
+static func customer_route(positions: Array[Vector2], destination: Vector2, devices: Dictionary = DEFAULT_DEVICES) -> Array[Vector2]:
+	var obstacles: Array[Rect2] = [REGISTER]
 	for center in positions:
 		obstacles.append_array(table_footprints(center))
+	for id in DEVICE_IDS:
+		obstacles.append(device_footprint(devices[id]))
 	var grid := AStarGrid2D.new()
 	grid.region = Rect2i(Vector2i.ZERO, GRID_SIZE)
 	grid.cell_size = Vector2(CELL, CELL)
@@ -82,6 +94,14 @@ static func customer_route(positions: Array[Vector2], destination: Vector2) -> A
 	var route: Array[Vector2] = []
 	for point in best: route.append(point)
 	return route
+
+
+static func _fits(footprint: Rect2, obstacles: Array[Rect2]) -> bool:
+	if footprint.position.x < 305.0 or footprint.end.x > 1224.0 or footprint.position.y < 300.0 or footprint.end.y > 665.0: return false
+	if footprint.intersects(DOOR_CLEAR): return false
+	for obstacle in obstacles:
+		if footprint.intersects(obstacle): return false
+	return true
 
 
 static func _blocked(cell: Vector2i, obstacles: Array[Rect2]) -> bool:

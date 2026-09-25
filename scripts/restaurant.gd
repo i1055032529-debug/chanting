@@ -4,6 +4,9 @@ const Model = preload("res://scripts/day_model.gd")
 const Customer = preload("res://scenes/actors/customer.tscn")
 const TableScene = preload("res://scenes/furniture/table.tscn")
 const ChairScene = preload("res://scenes/furniture/chair.tscn")
+const StoveScene = preload("res://scenes/furniture/stove.tscn")
+const PassScene = preload("res://scenes/furniture/pass.tscn")
+const SinkScene = preload("res://scenes/furniture/sink.tscn")
 const CookingScreen = preload("res://scenes/cooking/cooking_screen.tscn")
 const StainScript = preload("res://scripts/stain.gd")
 const EmployeeScene = preload("res://scenes/actors/employee.tscn")
@@ -137,10 +140,12 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_instance_valid(cooking_screen) or model.phase == "summary": return
-	if model.phase == "preopen" and layout_editing and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+	if model.phase == "preopen" and layout_panel.visible and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if event.position.x > 320.0 and event.position.y > 300.0 and event.position.y < 670.0:
-			layout_preview_position = Vector2(roundi(event.position.x / 10.0) * 10, roundi(event.position.y / 10.0) * 10)
-			_refresh_layout_preview()
+			if layout_editing:
+				layout_preview_position = Vector2(roundi(event.position.x / 10.0) * 10, roundi(event.position.y / 10.0) * 10)
+				_refresh_layout_preview()
+			else: _select_layout_at(event.position)
 			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("interact") and not event.is_echo() and model.phase == "open":
@@ -264,10 +269,10 @@ func _build_room() -> void:
 	var first_chair = $World/Chair
 	table_nodes.append(first_table)
 	chair_nodes.append(first_chair)
-	_sync_layout_nodes()
 	for id: String in ["stove", "pass", "sink"]:
 		stations[id] = actors.get_node(id.capitalize())
 	stations["stove_2"] = actors.get_node("Stove2")
+	_sync_layout_nodes()
 	for i in range(Model.MAX_EMPLOYEES):
 		var worker = EmployeeScene.instantiate()
 		var home := Vector2(375 + i * 30, 570)
@@ -279,6 +284,9 @@ func _build_room() -> void:
 
 
 func _sync_layout_nodes() -> void:
+	for id in Model.DEVICE_IDS:
+		stations[id].position = model.device_positions[id]
+		stations[id].visible = true
 	while table_nodes.size() > model.table_count():
 		var old_index := table_nodes.size() - 1
 		stations.erase("table_%d" % (old_index + 1))
@@ -325,7 +333,7 @@ func _layout_order_cards() -> void:
 func _spawn_customer(id: int, table_id: int) -> void:
 	var customer = Customer.instantiate()
 	var seat: Vector2 = stations["table_%d" % (table_id + 1)].get_node("Seat").global_position
-	var route: Array[Vector2] = Layout.customer_route(model.table_positions, seat + Vector2(0, 30))
+	var route: Array[Vector2] = Layout.customer_route(model.table_positions, seat + Vector2(0, 30), model.device_positions)
 	customer.configure($Entrance.global_position, route, seat)
 	customer.seated.connect(func(): model.seat_customer(id))
 	customer.departed.connect(func():
@@ -563,10 +571,10 @@ func _build_layout_panel() -> void:
 	layout_labels["selected"] = _child_label(layout_panel, "", Vector2(70, 101), Vector2(155, 30), 18, CREAM)
 	layout_labels["previous"] = _make_button(layout_panel, "←", Rect2(18, 98, 42, 32), func(): _select_layout_table(-1))
 	layout_labels["next"] = _make_button(layout_panel, "→", Rect2(235, 98, 42, 32), func(): _select_layout_table(1))
-	layout_labels["move"] = _make_button(layout_panel, "移动选中餐桌", Rect2(18, 141, 259, 35), func(): _begin_layout_preview(false))
+	layout_labels["move"] = _make_button(layout_panel, "移动选中物品", Rect2(18, 141, 259, 35), func(): _begin_layout_preview(false))
 	layout_labels["buy"] = _make_button(layout_panel, "", Rect2(18, 184, 259, 35), func(): _begin_layout_preview(true))
 	layout_labels["upgrade"] = _make_button(layout_panel, "", Rect2(18, 227, 259, 35), _upgrade_equipment)
-	layout_labels["instructions"] = _child_label(layout_panel, "点击地面或用方向按钮预览位置。\n绿色可放，红色不可放；确认前不扣款。", Vector2(18, 272), Vector2(265, 58), 14, MUTED)
+	layout_labels["instructions"] = _child_label(layout_panel, "点击物品选中；布置时点击地面或用箭头预览。\n绿色可放，红色不可放；确认前不扣款。", Vector2(18, 272), Vector2(265, 58), 14, MUTED)
 	layout_labels["left"] = _make_button(layout_panel, "←", Rect2(18, 333, 55, 32), func(): _move_layout_preview(Vector2(-20, 0)))
 	layout_labels["right"] = _make_button(layout_panel, "→", Rect2(82, 333, 55, 32), func(): _move_layout_preview(Vector2(20, 0)))
 	layout_labels["up"] = _make_button(layout_panel, "↑", Rect2(146, 333, 55, 32), func(): _move_layout_preview(Vector2(0, -20)))
@@ -583,6 +591,7 @@ func _toggle_layout() -> void:
 	if layout_panel.visible:
 		_cancel_layout_preview()
 		layout_panel.hide()
+		_refresh_layout_panel()
 		preopen_panel.show()
 	else:
 		store_panel.hide()
@@ -594,27 +603,54 @@ func _toggle_layout() -> void:
 
 func _select_layout_table(delta: int) -> void:
 	if layout_editing: return
-	layout_selected = clampi(layout_selected + delta, 0, model.table_count() - 1)
+	layout_selected = clampi(layout_selected + delta, 0, model.table_count() + Model.DEVICE_IDS.size() - 1)
 	_refresh_layout_panel()
+
+
+func _select_layout_at(point: Vector2) -> void:
+	var nearest_index := -1
+	var nearest_distance := 70.0
+	for i in range(model.table_count()):
+		var distance := minf(point.distance_to(model.table_positions[i]), point.distance_to(model.table_positions[i] + Vector2(100, 0)))
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest_index = i
+	for i in range(Model.DEVICE_IDS.size()):
+		var distance: float = point.distance_to(model.device_positions[Model.DEVICE_IDS[i]])
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest_index = model.table_count() + i
+	if nearest_index >= 0:
+		layout_selected = nearest_index
+		_refresh_layout_panel()
+
+
+func _layout_device_id() -> String:
+	var index := layout_selected - model.table_count()
+	return Model.DEVICE_IDS[index] if index >= 0 and index < Model.DEVICE_IDS.size() else ""
 
 
 func _begin_layout_preview(new_table: bool) -> void:
 	if model.phase != "preopen" or layout_editing or (new_table and model.table_count() >= Model.TABLE_COUNT + 1): return
 	layout_new_table = new_table
 	layout_editing = true
-	layout_preview_position = Model.FIFTH_TABLE_POSITION if new_table else model.table_positions[layout_selected]
+	var device_id := "" if new_table else _layout_device_id()
+	layout_preview_position = Model.FIFTH_TABLE_POSITION if new_table else model.device_positions[device_id] if device_id != "" else model.table_positions[layout_selected]
 	if not new_table:
-		table_nodes[layout_selected].visible = false
-		chair_nodes[layout_selected].visible = false
-	layout_preview_table = TableScene.instantiate()
-	layout_preview_chair = ChairScene.instantiate()
+		if device_id != "": stations[device_id].visible = false
+		else:
+			table_nodes[layout_selected].visible = false
+			chair_nodes[layout_selected].visible = false
+	layout_preview_table = (StoveScene if device_id in Model.STOVES else PassScene if device_id == "pass" else SinkScene).instantiate() if device_id != "" else TableScene.instantiate()
 	actors.add_child(layout_preview_table)
-	actors.add_child(layout_preview_chair)
 	layout_preview_table.collision_layer = 0
-	layout_preview_chair.collision_layer = 0
 	layout_preview_table.get_node("CollisionShape2D").disabled = true
-	layout_preview_chair.get_node("CollisionShape2D").disabled = true
-	layout_preview_table.get_node("Caption").text = "新餐桌" if new_table else "%02d 号桌" % (layout_selected + 1)
+	if device_id == "":
+		layout_preview_chair = ChairScene.instantiate()
+		actors.add_child(layout_preview_chair)
+		layout_preview_chair.collision_layer = 0
+		layout_preview_chair.get_node("CollisionShape2D").disabled = true
+	layout_preview_table.get_node("Caption").text = "新餐桌" if new_table else stations[device_id].display_name if device_id != "" else "%02d 号桌" % (layout_selected + 1)
 	_refresh_layout_preview()
 
 
@@ -625,32 +661,36 @@ func _move_layout_preview(offset: Vector2) -> void:
 
 
 func _preview_layout_valid() -> bool:
-	var positions := model.table_positions.duplicate()
+	var positions: Array[Vector2] = model.table_positions.duplicate()
+	var devices: Dictionary = model.device_positions.duplicate(true)
 	if layout_new_table: positions.append(layout_preview_position)
+	elif _layout_device_id() != "": devices[_layout_device_id()] = layout_preview_position
 	else: positions[layout_selected] = layout_preview_position
-	return Layout.valid(positions)
+	return Layout.valid(positions, devices)
 
 
 func _refresh_layout_preview() -> void:
 	if not layout_editing: return
 	layout_preview_table.position = layout_preview_position
-	layout_preview_chair.position = layout_preview_position + Vector2(100, 0)
+	if is_instance_valid(layout_preview_chair): layout_preview_chair.position = layout_preview_position + Vector2(100, 0)
 	var tint := Color(0.65, 1.0, 0.65, 0.7) if _preview_layout_valid() else Color(1.0, 0.5, 0.45, 0.7)
 	layout_preview_table.modulate = tint
-	layout_preview_chair.modulate = tint
+	if is_instance_valid(layout_preview_chair): layout_preview_chair.modulate = tint
 	_refresh_layout_panel()
 
 
 func _confirm_layout_preview() -> void:
 	if not layout_editing or not _preview_layout_valid(): return
-	if not layout_new_table and model.table_positions[layout_selected] == layout_preview_position:
+	var device_id := "" if layout_new_table else _layout_device_id()
+	var original: Vector2 = model.device_positions[device_id] if device_id != "" else model.table_positions[layout_selected] if not layout_new_table else Vector2.ZERO
+	if not layout_new_table and original == layout_preview_position:
 		_cancel_layout_preview()
 		return
-	var success: bool = model.buy_table(layout_preview_position) if layout_new_table else model.move_table(layout_selected, layout_preview_position)
+	var success: bool = model.buy_table(layout_preview_position) if layout_new_table else model.move_device(device_id, layout_preview_position) if device_id != "" else model.move_table(layout_selected, layout_preview_position)
 	if not success: return
 	_cancel_layout_preview()
 	_sync_layout_nodes()
-	layout_selected = model.table_count() - 1 if model.table_count() > Model.TABLE_COUNT else layout_selected
+	if layout_new_table: layout_selected = model.table_count() - 1
 	_refresh_ui()
 	_refresh_layout_panel()
 
@@ -658,10 +698,13 @@ func _confirm_layout_preview() -> void:
 func _cancel_layout_preview() -> void:
 	if not layout_editing: return
 	if not layout_new_table:
-		table_nodes[layout_selected].visible = true
-		chair_nodes[layout_selected].visible = true
+		var device_id := _layout_device_id()
+		if device_id != "": stations[device_id].visible = true
+		else:
+			table_nodes[layout_selected].visible = true
+			chair_nodes[layout_selected].visible = true
 	layout_preview_table.queue_free()
-	layout_preview_chair.queue_free()
+	if is_instance_valid(layout_preview_chair): layout_preview_chair.queue_free()
 	layout_preview_table = null
 	layout_preview_chair = null
 	layout_editing = false
@@ -675,11 +718,12 @@ func _upgrade_equipment() -> void:
 
 func _refresh_layout_panel() -> void:
 	if layout_panel == null: return
-	layout_selected = mini(layout_selected, model.table_count() - 1)
+	var total := model.table_count() + Model.DEVICE_IDS.size()
+	layout_selected = mini(layout_selected, total - 1)
 	layout_labels.balance.text = "现金 %d · 可用 %d" % [model.coins, model.spendable_cash()]
-	layout_labels.selected.text = "%d / %d 号桌" % [layout_selected + 1, model.table_count()]
+	layout_labels.selected.text = "%d/%d · %s" % [layout_selected + 1, total, stations[_layout_device_id()].display_name if _layout_device_id() != "" else "%02d 号桌" % (layout_selected + 1)]
 	layout_labels.previous.disabled = layout_editing or layout_selected == 0
-	layout_labels.next.disabled = layout_editing or layout_selected >= model.table_count() - 1
+	layout_labels.next.disabled = layout_editing or layout_selected >= total - 1
 	layout_labels.move.disabled = layout_editing
 	layout_labels.buy.text = "购买第 5 张桌 · %d 金币" % Model.TABLE_PRICE if model.table_count() <= Model.TABLE_COUNT else "餐桌已购齐"
 	layout_labels.buy.disabled = layout_editing or model.table_count() > Model.TABLE_COUNT or model.spendable_cash() < Model.TABLE_PRICE
@@ -689,6 +733,12 @@ func _refresh_layout_panel() -> void:
 	layout_labels.confirm.disabled = not layout_editing or not _preview_layout_valid() or (layout_new_table and model.spendable_cash() < Model.TABLE_PRICE)
 	layout_labels.valid.text = ("位置可用" if _preview_layout_valid() else "位置不可用：碰撞、越界或堵住通路") if layout_editing else ""
 	layout_labels.valid.add_theme_color_override("font_color", GREEN if layout_editing and _preview_layout_valid() else RED)
+	for i in range(table_nodes.size()):
+		var tint := Color("fff4c7") if layout_panel.visible and not layout_editing and layout_selected == i else Color.WHITE
+		table_nodes[i].modulate = tint
+		chair_nodes[i].modulate = tint
+	for i in range(Model.DEVICE_IDS.size()):
+		stations[Model.DEVICE_IDS[i]].modulate = Color("fff4c7") if layout_panel.visible and not layout_editing and layout_selected == model.table_count() + i else Color.WHITE
 
 
 func _adjust_purchase(ingredient: String, amount: int) -> void:

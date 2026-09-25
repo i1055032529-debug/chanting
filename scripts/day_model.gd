@@ -14,6 +14,7 @@ signal day_finished(summary: Dictionary)
 enum Carry { NONE, FOOD, PLATE }
 const TABLE_COUNT := 4
 const STOVES := ["stove", "stove_2"]
+const DEVICE_IDS := ["stove", "stove_2", "pass", "sink"]
 const PASS_CAPACITY := 2
 const EXPENSE_KINDS := ["purchase", "wages", "furniture", "equipment", "expansion"]
 const STARTING_CASH := 60
@@ -88,6 +89,7 @@ var selected_order_id := 0
 var orders: Dictionary = {}
 var tables: Array[int] = [0, 0, 0, 0]
 var table_positions: Array[Vector2] = STARTING_TABLE_POSITIONS.duplicate()
+var device_positions: Dictionary = Layout.DEFAULT_DEVICES.duplicate(true)
 var equipment_level := 0
 var pass_order_id := 0
 var pass_order_ids: Array[int] = []
@@ -144,9 +146,20 @@ func move_table(index: int, destination: Vector2) -> bool:
 	if phase != "preopen" or index < 0 or index >= table_count() or table_positions[index] == destination: return false
 	var candidate := table_positions.duplicate()
 	candidate[index] = destination
-	if not Layout.valid(candidate): return _reject("家具位置不可用：请避开其他家具并留出工作通路。")
+	if not Layout.valid(candidate, device_positions): return _reject("家具位置不可用：请避开其他家具并留出工作通路。")
 	table_positions = candidate
 	feedback.emit("%02d 号桌已调整位置。" % (index + 1))
+	changed.emit()
+	return true
+
+
+func move_device(id: String, destination: Vector2) -> bool:
+	if phase != "preopen" or id not in Layout.DEVICE_IDS or device_positions[id] == destination: return false
+	var candidate: Dictionary = device_positions.duplicate(true)
+	candidate[id] = destination
+	if not Layout.valid(table_positions, candidate): return _reject("设备位置不可用：请避开其他家具并留出工作通路。")
+	device_positions = candidate
+	feedback.emit("%s已调整位置。" % {"stove": "烹饪台 1", "stove_2": "烹饪台 2", "pass": "出餐台", "sink": "餐盘回收台"}[id])
 	changed.emit()
 	return true
 
@@ -155,7 +168,7 @@ func buy_table(destination: Vector2 = FIFTH_TABLE_POSITION) -> bool:
 	if phase != "preopen" or table_count() >= TABLE_COUNT + 1: return false
 	var candidate := table_positions.duplicate()
 	candidate.append(destination)
-	if not Layout.valid(candidate): return _reject("新增餐桌位置不可用：请留出通路。")
+	if not Layout.valid(candidate, device_positions): return _reject("新增餐桌位置不可用：请留出通路。")
 	if not spend("furniture", TABLE_PRICE, "furniture:table:%d" % table_count()): return _reject("购买餐桌失败：可用金币不足。")
 	table_positions = candidate
 	tables.append(0)
@@ -872,6 +885,7 @@ func new_game() -> void:
 	day_number = 1
 	coins = STARTING_CASH
 	table_positions = STARTING_TABLE_POSITIONS.duplicate()
+	device_positions = Layout.DEFAULT_DEVICES.duplicate(true)
 	equipment_level = 0
 	employee_hired_count = 0
 	employee_attending_count = 0
