@@ -135,11 +135,13 @@ func _run() -> void:
 	var initial: Vector2 = worker.position
 	var previous: Vector2 = initial
 	var max_step := 0.0
+	var max_excursion := 0.0
 	for i in range(120):
 		worker._physics_process(0.1)
 		max_step = maxf(max_step, worker.position.distance_to(previous))
+		max_excursion = maxf(max_excursion, worker.position.distance_to(initial))
 		previous = worker.position
-	check(worker.position.distance_to(initial) > 8.0 and worker.position.distance_to(initial) < 150.0 and max_step <= worker.IDLE_SPEED * 0.1 + 0.01, "idle worker wanders locally at a slow speed")
+	check(max_excursion > 8.0 and max_excursion < 150.0 and max_step <= worker.IDLE_SPEED * 0.1 + 0.01, "idle worker wanders locally at a slow speed")
 	wandering.model.request_customer()
 	wandering.model.seat_customer(1)
 	worker._physics_process(0.1)
