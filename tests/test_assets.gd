@@ -16,7 +16,7 @@ func check(condition: bool, message: String) -> void:
 
 
 func _run() -> void:
-	var paths := ["backgrounds/restaurant.webp", "characters/chef.png", "characters/customer.png", "furniture/stove.png", "furniture/serving_counter.png", "furniture/sink.png", "furniture/table.png", "furniture/chair.png", "items/meal.png"]
+	var paths := ["backgrounds/restaurant.webp", "backgrounds/tiles/floor.png", "backgrounds/tiles/wall.png", "backgrounds/tiles/border.png", "characters/chef.png", "characters/customer.png", "furniture/stove.png", "furniture/serving_counter.png", "furniture/sink.png", "furniture/table.png", "furniture/chair.png", "items/meal.png"]
 	var total := 0
 	for relative: String in paths:
 		var path := "res://assets/" + relative
@@ -30,8 +30,11 @@ func _run() -> void:
 		check(texture != null, "Godot imports texture: " + relative)
 		if texture == null: continue
 		var image := texture.get_image()
-		if relative.begins_with("backgrounds"):
+		if relative == "backgrounds/restaurant.webp":
 			check(image.get_size() == Vector2i(1216, 521), "background preserves complete wide composition")
+		elif relative.begins_with("backgrounds/tiles"):
+			var expected := Vector2i(80, 80) if relative.ends_with("floor.png") else Vector2i(80, 130) if relative.ends_with("wall.png") else Vector2i(80, 16)
+			check(image.get_size() == expected, "room tile imports at expected cell size: " + relative)
 		else:
 			check(image.detect_alpha() != Image.ALPHA_NONE, "sprite retains alpha: " + relative)
 			check(image.get_pixel(0, 0).a < 0.01, "sprite corner is transparent: " + relative)

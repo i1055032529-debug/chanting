@@ -59,7 +59,8 @@ jobs:
             tests/test_assets.gd tests/test_cooking_model.gd tests/test_cooking_screen.gd \
             tests/test_employee_model.gd tests/test_employee.gd tests/test_employee_comparison.gd \
             tests/test_multi_day.gd tests/test_inventory.gd tests/test_customer_choice.gd \
-            tests/test_payroll.gd tests/test_multi_employee.gd tests/test_layout_equipment.gd; do
+            tests/test_payroll.gd tests/test_multi_employee.gd tests/test_layout_equipment.gd \
+            tests/test_expansion.gd; do
             run_godot "$script" "test-results/$(basename "$script" .gd).log" --script "$script"
           done
           exit "$failures"

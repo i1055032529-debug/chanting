@@ -48,6 +48,7 @@ const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
 const Layout = preload("res://scripts/layout_rules.gd")
 const STARTING_TABLE_POSITIONS: Array[Vector2] = [Vector2(530, 460), Vector2(900, 460), Vector2(530, 575), Vector2(900, 575)]
 const TABLE_PRICE := 40
+const EXPANSION_PRICE := 20
 const EQUIPMENT_PRICE := 70
 const EQUIPMENT_SPEED_BONUS := 1.25
 
@@ -89,6 +90,7 @@ var orders: Dictionary = {}
 var tables: Array[int] = [0, 0, 0, 0]
 var table_positions: Array[Vector2] = STARTING_TABLE_POSITIONS.duplicate()
 var device_positions: Dictionary = Layout.DEFAULT_DEVICES.duplicate(true)
+var expansion_cells: Array[Vector2i] = []
 var equipment_level := 0
 var pass_order_id := 0
 var pass_order_ids: Array[int] = []
@@ -145,7 +147,7 @@ func move_table(index: int, destination: Vector2) -> bool:
 	if phase != "preopen" or index < 0 or index >= table_count() or table_positions[index] == destination: return false
 	var candidate := table_positions.duplicate()
 	candidate[index] = destination
-	if not Layout.valid(candidate, device_positions): return _reject("家具位置不可用：请避开其他家具并留出工作通路。")
+	if not Layout.valid(candidate, device_positions, expansion_cells): return _reject("家具位置不可用：请避开其他家具并留出工作通路。")
 	table_positions = candidate
 	feedback.emit("%02d 号桌已调整位置。" % (index + 1))
 	changed.emit()
@@ -156,7 +158,7 @@ func move_device(id: String, destination: Vector2) -> bool:
 	if phase != "preopen" or id not in Layout.DEVICE_IDS or device_positions[id] == destination: return false
 	var candidate: Dictionary = device_positions.duplicate(true)
 	candidate[id] = destination
-	if not Layout.valid(table_positions, candidate): return _reject("设备位置不可用：请避开其他家具并留出工作通路。")
+	if not Layout.valid(table_positions, candidate, expansion_cells): return _reject("设备位置不可用：请避开其他家具并留出工作通路。")
 	device_positions = candidate
 	feedback.emit("%s已调整位置。" % {"stove": "烹饪台 1", "stove_2": "烹饪台 2", "pass": "出餐台", "sink": "餐盘回收台"}[id])
 	changed.emit()
@@ -166,15 +168,30 @@ func move_device(id: String, destination: Vector2) -> bool:
 func buy_table(destination: Vector2 = Vector2.ZERO) -> bool:
 	if phase != "preopen": return false
 	if spendable_cash() < TABLE_PRICE: return _reject("购买餐桌失败：可用金币不足。")
-	if destination == Vector2.ZERO: destination = Layout.free_table_position(table_positions, device_positions)
+	if destination == Vector2.ZERO: destination = Layout.free_table_position(table_positions, device_positions, expansion_cells)
 	if destination == Vector2.ZERO: return _reject("餐厅暂无可摆放餐桌的位置；请调整布局。")
 	var candidate := table_positions.duplicate()
 	candidate.append(destination)
-	if not Layout.valid(candidate, device_positions): return _reject("新增餐桌位置不可用：请留出通路。")
+	if not Layout.valid(candidate, device_positions, expansion_cells): return _reject("新增餐桌位置不可用：请留出通路。")
 	if not spend("furniture", TABLE_PRICE, "furniture:table:%d" % table_count()): return _reject("购买餐桌失败：可用金币不足。")
 	table_positions = candidate
 	tables.append(0)
 	feedback.emit("已购入第 %d 张餐桌，支出 %d 金币。" % [table_count(), TABLE_PRICE])
+	changed.emit()
+	return true
+
+
+func can_expand(cell: Vector2i) -> bool:
+	if phase != "preopen" or cell.x < Layout.INITIAL_COLUMNS or cell.x >= Layout.TOTAL_COLUMNS or cell.y < 0 or cell.y >= Layout.ROOM_ROWS or cell in expansion_cells: return false
+	if cell.x == Layout.INITIAL_COLUMNS: return true
+	return cell + Vector2i.LEFT in expansion_cells or cell + Vector2i.RIGHT in expansion_cells or cell + Vector2i.UP in expansion_cells or cell + Vector2i.DOWN in expansion_cells
+
+
+func buy_expansion(cell: Vector2i) -> bool:
+	if not can_expand(cell): return _reject("只能购买与现有店面相邻的空地。")
+	if not spend("expansion", EXPANSION_PRICE, "expansion:%d:%d" % [cell.x, cell.y]): return _reject("扩建失败：可用金币不足。")
+	expansion_cells.append(cell)
+	feedback.emit("已扩建一格地面，支出 %d 金币。" % EXPANSION_PRICE)
 	changed.emit()
 	return true
 
@@ -888,6 +905,7 @@ func new_game() -> void:
 	coins = STARTING_CASH
 	table_positions = STARTING_TABLE_POSITIONS.duplicate()
 	device_positions = Layout.DEFAULT_DEVICES.duplicate(true)
+	expansion_cells.clear()
 	equipment_level = 0
 	employee_hired_count = 0
 	employee_attending_count = 0

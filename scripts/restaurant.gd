@@ -57,6 +57,11 @@ var layout_new_table := false
 var layout_preview_position := Vector2.ZERO
 var layout_preview_table: Node2D
 var layout_preview_chair: Node2D
+var camera_focus_x := 640.0
+var expansion_panel: Panel
+var expansion_selected := Vector2i(-1, -1)
+var expansion_buttons: Dictionary = {}
+var expansion_labels: Dictionary = {}
 var hire_button: Button
 var dismiss_button: Button
 var select_previous_button: Button
@@ -97,6 +102,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	$Camera.position.x = clampf(player.position.x, 640.0, 1000.0) if model.phase == "open" else camera_focus_x
 	toast_time = maxf(0.0, toast_time - delta)
 	model.advance(delta)
 	player.locked = is_instance_valid(cooking_screen) or model.phase != "open"
@@ -148,9 +154,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if model.phase == "preopen" and layout_panel.visible and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if event.position.x > 320.0 and event.position.y > 300.0 and event.position.y < 670.0:
 			if layout_editing:
-				layout_preview_position = Vector2(roundi(event.position.x / 10.0) * 10, roundi(event.position.y / 10.0) * 10)
+				var world_position := get_global_mouse_position()
+				layout_preview_position = Vector2(roundi(world_position.x / 10.0) * 10, roundi(world_position.y / 10.0) * 10)
 				_refresh_layout_preview()
-			else: _select_layout_at(event.position)
+			else: _select_layout_at(get_global_mouse_position())
 			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("interact") and not event.is_echo() and model.phase == "open":
@@ -207,8 +214,12 @@ func try_interact(id: String) -> bool:
 
 func reset_run() -> void:
 	_cancel_layout_preview()
+	if layout_panel != null: layout_panel.hide()
+	if expansion_panel != null: expansion_panel.hide()
 	_clear_scene_day()
 	model.new_game()
+	$Background.set_expansion(model.expansion_cells)
+	camera_focus_x = 640.0
 	_sync_layout_nodes()
 	for worker in employees: worker.reset_new_game()
 	selected_employee_index = 0
@@ -237,6 +248,7 @@ func start_day() -> bool:
 	store_panel.hide()
 	management_panel.hide()
 	layout_panel.hide()
+	expansion_panel.hide()
 	_refresh_employee_presence()
 	player.locked = false
 	_refresh_ui()
@@ -272,6 +284,7 @@ func _setup_input() -> void:
 
 
 func _build_room() -> void:
+	$Background.set_expansion(model.expansion_cells)
 	actors = $World
 	player = $World/Player
 	var first_table = $World/Table
@@ -355,7 +368,7 @@ func _change_order_page(delta: int) -> void:
 func _spawn_customer(id: int, table_id: int) -> void:
 	var customer = Customer.instantiate()
 	var seat: Vector2 = stations["table_%d" % (table_id + 1)].get_node("Seat").global_position
-	var route: Array[Vector2] = Layout.customer_route(model.table_positions, seat + Vector2(0, 30), model.device_positions)
+	var route: Array[Vector2] = Layout.customer_route(model.table_positions, seat + Vector2(0, 30), model.device_positions, model.expansion_cells)
 	customer.configure($Entrance.global_position, route, seat)
 	customer.seated.connect(func(): model.seat_customer(id))
 	customer.departed.connect(func():
@@ -503,17 +516,19 @@ func _build_ui() -> void:
 		work_buttons["up_" + row_kind] = up_button
 	management_status = _child_label(management_panel, "", Vector2(20, 402), Vector2(420, 28), 13, CREAM)
 	_child_label(management_panel, "雇佣只在开店前调整；工资在打烊时支付一次。", Vector2(20, 437), Vector2(420, 24), 13, MUTED)
-	preopen_panel = _panel(Rect2(325, 225, 630, 350), Color("30291f"))
+	preopen_panel = _panel(Rect2(325, 200, 630, 400), Color("30291f"))
 	preopen_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_child_label(preopen_panel, "开店准备", Vector2(34, 24), Vector2(550, 48), 30, GOLD)
 	preopen_text = _child_label(preopen_panel, "", Vector2(34, 86), Vector2(560, 120), 19, CREAM)
 	_button(preopen_panel, "开始营业", Rect2(34, 220, 562, 48), start_day)
-	_button(preopen_panel, "采购菜单", Rect2(34, 286, 130, 38), _toggle_store)
-	_button(preopen_panel, "员工安排", Rect2(178, 286, 130, 38), _toggle_management)
-	_button(preopen_panel, "家具设备", Rect2(322, 286, 130, 38), _toggle_layout)
-	_button(preopen_panel, "新游戏", Rect2(466, 286, 130, 38), _open_reset)
+	_button(preopen_panel, "采购菜单", Rect2(34, 286, 178, 38), _toggle_store)
+	_button(preopen_panel, "员工安排", Rect2(226, 286, 178, 38), _toggle_management)
+	_button(preopen_panel, "家具设备", Rect2(418, 286, 178, 38), _toggle_layout)
+	_button(preopen_panel, "逐格扩建", Rect2(34, 334, 270, 38), _toggle_expansion)
+	_button(preopen_panel, "新游戏", Rect2(326, 334, 270, 38), _open_reset)
 	_build_store_panel()
 	_build_layout_panel()
+	_build_expansion_panel()
 	pause_panel = _panel(Rect2(425, 270, 430, 260), Color("38291f"))
 	pause_panel.visible = false
 	pause_panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -553,6 +568,7 @@ func _build_ui() -> void:
 	preopen_panel.reparent(modal_root)
 	store_panel.reparent(modal_root)
 	layout_panel.reparent(modal_root)
+	expansion_panel.reparent(modal_root)
 	summary_panel.reparent(modal_root)
 	reset_dialog.reparent(modal_root)
 
@@ -588,7 +604,7 @@ func _build_store_panel() -> void:
 
 
 func _build_layout_panel() -> void:
-	layout_panel = _panel(Rect2(20, 170, 300, 490), Color("30291f"))
+	layout_panel = _panel(Rect2(20, 170, 300, 530), Color("30291f"))
 	layout_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	layout_panel.hide()
 	_child_label(layout_panel, "家具与设备", Vector2(18, 14), Vector2(265, 40), 25, GOLD)
@@ -608,7 +624,78 @@ func _build_layout_panel() -> void:
 	layout_labels["confirm"] = _make_button(layout_panel, "确认位置", Rect2(18, 402, 124, 35), _confirm_layout_preview)
 	layout_labels["cancel"] = _make_button(layout_panel, "取消布置", Rect2(153, 402, 124, 35), _cancel_layout_preview)
 	_make_button(layout_panel, "返回开店准备", Rect2(18, 446, 259, 32), _toggle_layout)
+	_make_button(layout_panel, "◀ 查看左侧", Rect2(18, 486, 125, 32), func(): _move_camera_focus(-160.0))
+	_make_button(layout_panel, "查看右侧 ▶", Rect2(152, 486, 125, 32), func(): _move_camera_focus(160.0))
 	_refresh_layout_panel()
+
+
+func _build_expansion_panel() -> void:
+	expansion_panel = _panel(Rect2(325, 150, 630, 540), Color("30291f"))
+	expansion_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	expansion_panel.hide()
+	_child_label(expansion_panel, "逐格扩建", Vector2(28, 19), Vector2(400, 43), 28, GOLD)
+	expansion_labels["balance"] = _child_label(expansion_panel, "", Vector2(28, 65), Vector2(565, 28), 16, CREAM)
+	_child_label(expansion_panel, "左侧是现有店面；点击右侧相邻空地，每次只扩建一格。", Vector2(28, 96), Vector2(565, 25), 14, MUTED)
+	var original := _panel(Rect2(28, 140, 105, 290), Color("c57632"))
+	original.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_child_label(expansion_panel, "现有\n店面", Vector2(50, 252), Vector2(70, 60), 18, CREAM)
+	for row in range(Layout.ROOM_ROWS):
+		for column in range(Layout.INITIAL_COLUMNS, Layout.TOTAL_COLUMNS):
+			var cell := Vector2i(column, row)
+			var button := _make_button(expansion_panel, "", Rect2(155 + (column - Layout.INITIAL_COLUMNS) * 87, 140 + row * 59, 74, 51), func(): _select_expansion(cell))
+			expansion_buttons[cell] = button
+	expansion_labels["status"] = _child_label(expansion_panel, "", Vector2(28, 445), Vector2(565, 25), 15, CREAM)
+	expansion_labels["confirm"] = _make_button(expansion_panel, "确认扩建", Rect2(28, 485, 270, 40), _confirm_expansion)
+	_make_button(expansion_panel, "返回开店准备", Rect2(326, 485, 270, 40), _toggle_expansion)
+	_refresh_expansion_panel()
+
+
+func _toggle_expansion() -> void:
+	if model.phase != "preopen": return
+	expansion_panel.visible = not expansion_panel.visible
+	if expansion_panel.visible:
+		store_panel.hide()
+		management_panel.hide()
+		layout_panel.hide()
+	preopen_panel.visible = not expansion_panel.visible
+	_refresh_expansion_panel()
+
+
+func _select_expansion(cell: Vector2i) -> void:
+	expansion_selected = cell
+	_refresh_expansion_panel()
+
+
+func _refresh_expansion_panel() -> void:
+	if expansion_panel == null: return
+	expansion_labels.balance.text = "可用 %d 金币 · 每格 %d 金币 · 已扩建 %d 格" % [model.spendable_cash(), Model.EXPANSION_PRICE, model.expansion_cells.size()]
+	for cell: Vector2i in expansion_buttons:
+		var button: Button = expansion_buttons[cell]
+		button.text = "✓" if cell in model.expansion_cells else "+" if model.can_expand(cell) else "·"
+		button.modulate = GREEN if cell in model.expansion_cells else GOLD if model.can_expand(cell) else MUTED
+		if cell == expansion_selected: button.modulate = Color("fff4c7")
+	var selected_valid: bool = model.can_expand(expansion_selected)
+	expansion_labels.status.text = "已选：%s · %s" % ["%d 列 %d 行" % [expansion_selected.x - Layout.INITIAL_COLUMNS + 1, expansion_selected.y + 1] if expansion_selected.x >= Layout.INITIAL_COLUMNS else "未选择", "可扩建" if selected_valid else "请选择与店面相邻的空格"]
+	expansion_labels.confirm.disabled = not selected_valid or model.spendable_cash() < Model.EXPANSION_PRICE
+
+
+func _confirm_expansion() -> void:
+	if not model.buy_expansion(expansion_selected): return
+	$Background.set_expansion(model.expansion_cells)
+	camera_focus_x = clampf(Layout.ROOM_ORIGIN.x + (expansion_selected.x + 0.5) * Layout.ROOM_CELL, 640.0, 1000.0)
+	$Camera.position.x = camera_focus_x
+	_sync_layout_nodes()
+	expansion_panel.hide()
+	preopen_panel.hide()
+	layout_panel.show()
+	_refresh_layout_panel()
+	_refresh_expansion_panel()
+
+
+func _move_camera_focus(amount: float) -> void:
+	if model.phase != "preopen" or not layout_panel.visible: return
+	camera_focus_x = clampf(camera_focus_x + amount, 640.0, 1000.0)
+	$Camera.position.x = camera_focus_x
 
 
 func _toggle_layout() -> void:
@@ -621,6 +708,7 @@ func _toggle_layout() -> void:
 	else:
 		store_panel.hide()
 		management_panel.hide()
+		expansion_panel.hide()
 		preopen_panel.hide()
 		layout_panel.show()
 	_refresh_layout_panel()
@@ -657,7 +745,7 @@ func _layout_device_id() -> String:
 
 func _begin_layout_preview(new_table: bool) -> void:
 	if model.phase != "preopen" or layout_editing: return
-	var free_position := Layout.free_table_position(model.table_positions, model.device_positions) if new_table else Vector2.ZERO
+	var free_position := Layout.free_table_position(model.table_positions, model.device_positions, model.expansion_cells) if new_table else Vector2.ZERO
 	if new_table and free_position == Vector2.ZERO:
 		model.feedback.emit("餐厅暂无可摆放餐桌的位置；请调整布局。")
 		return
@@ -695,7 +783,7 @@ func _preview_layout_valid() -> bool:
 	if layout_new_table: positions.append(layout_preview_position)
 	elif _layout_device_id() != "": devices[_layout_device_id()] = layout_preview_position
 	else: positions[layout_selected] = layout_preview_position
-	return Layout.valid(positions, devices)
+	return Layout.valid(positions, devices, model.expansion_cells)
 
 
 func _refresh_layout_preview() -> void:
@@ -799,7 +887,9 @@ func _claim_emergency() -> void:
 func _toggle_store() -> void:
 	if model.phase != "preopen": return
 	store_panel.visible = not store_panel.visible
-	if store_panel.visible: management_panel.hide()
+	if store_panel.visible:
+		management_panel.hide()
+		expansion_panel.hide()
 	preopen_panel.visible = not store_panel.visible
 	_refresh_store_panel()
 
@@ -828,6 +918,7 @@ func _refresh_store_panel() -> void:
 func _refresh_ui() -> void:
 	if labels.is_empty(): return
 	_refresh_store_panel()
+	_refresh_expansion_panel()
 	if model.phase == "summary" and summary_panel != null and summary_panel.visible:
 		summary_text.text = _format_summary(model.summary())
 	labels.title.text = "一人食堂 · 第 %d 天" % model.day_number
@@ -918,6 +1009,7 @@ func _toggle_management() -> void:
 		layout_panel.hide()
 	management_panel.visible = not management_panel.visible
 	if management_panel.visible: store_panel.hide()
+	if management_panel.visible: expansion_panel.hide()
 	if model.phase == "preopen": preopen_panel.visible = not management_panel.visible
 	_refresh_employee_panel()
 
