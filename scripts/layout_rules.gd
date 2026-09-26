@@ -7,11 +7,9 @@ const DEVICE_ROOM := Rect2(305, 365, 825, 265)
 const ROOM_ORIGIN := Vector2(40, 285)
 const ROOM_CELL := 80.0
 const INITIAL_COLUMNS := 15
-const TOTAL_COLUMNS := 20
 const ROOM_ROWS := 5
 const GRID_ORIGIN := Vector2(320, 300)
 const CELL := 10.0
-const GRID_SIZE := Vector2i(132, 38)
 const REGISTER := Rect2(50, 293, 242, 120)
 const DOOR_CLEAR := Rect2(335, 300, 110, 105)
 const SPAWN_POINTS := [Vector2(500, 520), Vector2(375, 570), Vector2(405, 570), Vector2(435, 570)]
@@ -25,8 +23,9 @@ static func free_table_position(positions: Array[Vector2], devices: Dictionary =
 		candidate.append(preferred)
 		if valid(candidate, devices, expansion_cells): return preferred
 		candidate.pop_back()
-	for y in range(400, 641, 20):
-		for x in range(380, 1561, 20):
+	var bounds := owned_bounds(expansion_cells)
+	for y in range(400, int(bounds.y - 40), 20):
+		for x in range(380, int(bounds.x - 60), 20):
 			var position := Vector2(x, y)
 			candidate.append(position)
 			if valid(candidate, devices, expansion_cells): return position
@@ -40,6 +39,36 @@ static func table_footprints(center: Vector2) -> Array[Rect2]:
 
 static func device_footprint(center: Vector2) -> Rect2:
 	return Rect2(center + Vector2(-60, -44), Vector2(120, 52))
+
+
+static func owned_cell(cell: Vector2i, expansion_cells: Array[Vector2i]) -> bool:
+	return cell.x >= 0 and cell.y >= 0 and ((cell.x < INITIAL_COLUMNS and cell.y < ROOM_ROWS) or cell in expansion_cells)
+
+
+static func frontier(expansion_cells: Array[Vector2i]) -> Array[Vector2i]:
+	var found := {}
+	for row in range(ROOM_ROWS): found[Vector2i(INITIAL_COLUMNS, row)] = true
+	for column in range(INITIAL_COLUMNS): found[Vector2i(column, ROOM_ROWS)] = true
+	for cell in expansion_cells:
+		for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			var neighbor: Vector2i = cell + direction
+			if neighbor.x >= 0 and neighbor.y >= 0 and not owned_cell(neighbor, expansion_cells): found[neighbor] = true
+	var result: Array[Vector2i] = []
+	for cell: Vector2i in found: result.append(cell)
+	return result
+
+
+static func owned_bounds(expansion_cells: Array[Vector2i]) -> Vector2:
+	var last := Vector2i(INITIAL_COLUMNS - 1, ROOM_ROWS - 1)
+	for cell in expansion_cells:
+		last.x = maxi(last.x, cell.x)
+		last.y = maxi(last.y, cell.y)
+	return ROOM_ORIGIN + Vector2(last + Vector2i.ONE) * ROOM_CELL
+
+
+static func grid_size(expansion_cells: Array[Vector2i]) -> Vector2i:
+	var bounds := owned_bounds(expansion_cells)
+	return Vector2i(ceili((bounds.x - GRID_ORIGIN.x) / CELL) + 2, ceili((bounds.y - GRID_ORIGIN.y) / CELL) + 2)
 
 
 static func valid(positions: Array[Vector2], devices: Dictionary = DEFAULT_DEVICES, expansion_cells: Array[Vector2i] = []) -> bool:
@@ -61,8 +90,9 @@ static func valid(positions: Array[Vector2], devices: Dictionary = DEFAULT_DEVIC
 		for obstacle in obstacles:
 			if obstacle.has_point(point): return false
 	var visited := {}
+	var bounds := grid_size(expansion_cells)
 	var queue: Array[Vector2i] = [Vector2i(5, 1)] # Entrance-side floor, near (370, 310).
-	if _blocked(queue[0], obstacles, expansion_cells): return false
+	if _blocked(queue[0], obstacles, expansion_cells, bounds): return false
 	visited[queue[0]] = true
 	var head := 0
 	while head < queue.size():
@@ -70,7 +100,7 @@ static func valid(positions: Array[Vector2], devices: Dictionary = DEFAULT_DEVIC
 		head += 1
 		for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 			var next: Vector2i = cell + direction
-			if visited.has(next) or _blocked(next, obstacles, expansion_cells): continue
+			if visited.has(next) or _blocked(next, obstacles, expansion_cells, bounds): continue
 			visited[next] = true
 			queue.append(next)
 	for id in DEVICE_IDS:
@@ -90,15 +120,16 @@ static func customer_route(positions: Array[Vector2], destination: Vector2, devi
 	for id in DEVICE_IDS:
 		obstacles.append(device_footprint(devices[id]))
 	var grid := AStarGrid2D.new()
-	grid.region = Rect2i(Vector2i.ZERO, GRID_SIZE)
+	var bounds := grid_size(expansion_cells)
+	grid.region = Rect2i(Vector2i.ZERO, bounds)
 	grid.cell_size = Vector2(CELL, CELL)
 	grid.offset = GRID_ORIGIN
 	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
 	grid.update()
-	for y in range(GRID_SIZE.y):
-		for x in range(GRID_SIZE.x):
+	for y in range(bounds.y):
+		for x in range(bounds.x):
 			var cell := Vector2i(x, y)
-			if _blocked(cell, obstacles, expansion_cells): grid.set_point_solid(cell)
+			if _blocked(cell, obstacles, expansion_cells, bounds): grid.set_point_solid(cell)
 	var start := Vector2i(5, 1)
 	var base := Vector2i(roundi((destination.x - GRID_ORIGIN.x) / CELL), roundi((destination.y - GRID_ORIGIN.y) / CELL))
 	var best := PackedVector2Array()
@@ -106,7 +137,7 @@ static func customer_route(positions: Array[Vector2], destination: Vector2, devi
 		for y in range(-radius, radius + 1):
 			for x in range(-radius, radius + 1):
 				var goal := base + Vector2i(x, y)
-				if _blocked(goal, obstacles, expansion_cells): continue
+				if _blocked(goal, obstacles, expansion_cells, bounds): continue
 				var candidate := grid.get_point_path(start, goal)
 				if not candidate.is_empty() and (best.is_empty() or candidate[-1].distance_to(destination) < best[-1].distance_to(destination)):
 					best = candidate
@@ -117,7 +148,6 @@ static func customer_route(positions: Array[Vector2], destination: Vector2, devi
 
 
 static func _fits(footprint: Rect2, obstacles: Array[Rect2], expansion_cells: Array[Vector2i]) -> bool:
-	if footprint.position.x < 305.0 or footprint.position.y < 300.0 or footprint.end.y > 665.0: return false
 	for y in range(int(footprint.position.y), int(footprint.end.y), 10):
 		for x in range(int(footprint.position.x), int(footprint.end.x), 10):
 			if not _owned(Vector2(x, y), expansion_cells): return false
@@ -128,8 +158,8 @@ static func _fits(footprint: Rect2, obstacles: Array[Rect2], expansion_cells: Ar
 	return true
 
 
-static func _blocked(cell: Vector2i, obstacles: Array[Rect2], expansion_cells: Array[Vector2i]) -> bool:
-	if cell.x < 0 or cell.y < 0 or cell.x >= GRID_SIZE.x or cell.y >= GRID_SIZE.y: return true
+static func _blocked(cell: Vector2i, obstacles: Array[Rect2], expansion_cells: Array[Vector2i], bounds: Vector2i) -> bool:
+	if cell.x < 0 or cell.y < 0 or cell.x >= bounds.x or cell.y >= bounds.y: return true
 	var point := GRID_ORIGIN + Vector2(cell) * CELL
 	if not _owned(point, expansion_cells): return true
 	for obstacle in obstacles:
@@ -138,13 +168,13 @@ static func _blocked(cell: Vector2i, obstacles: Array[Rect2], expansion_cells: A
 
 
 static func _expanded_center(point: Vector2, expansion_cells: Array[Vector2i]) -> bool:
-	return point.x >= ROOM_ORIGIN.x + INITIAL_COLUMNS * ROOM_CELL and _owned(point, expansion_cells)
+	var cell := Vector2i(floori((point.x - ROOM_ORIGIN.x) / ROOM_CELL), floori((point.y - ROOM_ORIGIN.y) / ROOM_CELL))
+	return cell in expansion_cells
 
 
 static func _owned(point: Vector2, expansion_cells: Array[Vector2i]) -> bool:
-	if point.x >= 305.0 and point.x < ROOM_ORIGIN.x + INITIAL_COLUMNS * ROOM_CELL and point.y >= 300.0 and point.y < 665.0: return true
 	var cell := Vector2i(floori((point.x - ROOM_ORIGIN.x) / ROOM_CELL), floori((point.y - ROOM_ORIGIN.y) / ROOM_CELL))
-	return cell in expansion_cells
+	return owned_cell(cell, expansion_cells)
 
 
 static func _near_reachable(point: Vector2, visited: Dictionary) -> bool:

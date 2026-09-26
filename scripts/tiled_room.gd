@@ -8,6 +8,7 @@ const BORDER = preload("res://assets/backgrounds/tiles/border.png")
 const ORIGINAL = preload("res://assets/backgrounds/restaurant.webp")
 
 var expansion_cells: Array[Vector2i] = []
+var preview_enabled := false
 
 
 func _ready() -> void:
@@ -19,52 +20,62 @@ func set_expansion(cells: Array[Vector2i]) -> void:
 	_rebuild()
 
 
+func set_expansion_preview(enabled: bool) -> void:
+	preview_enabled = enabled
+	_rebuild()
+
+
 func _rebuild() -> void:
 	for child in get_children(): child.free()
 	var origin: Vector2 = Layout.ROOM_ORIGIN
 	var size: float = Layout.ROOM_CELL
-	var lot := Polygon2D.new()
-	lot.polygon = PackedVector2Array([Vector2(1240, 285), Vector2(1640, 285), Vector2(1640, 685), Vector2(1240, 685)])
-	lot.color = Color("38291f")
-	add_child(lot)
+	var backdrop := Polygon2D.new()
+	backdrop.polygon = PackedVector2Array([Vector2(-100000, -100000), Vector2(100000, -100000), Vector2(100000, 100000), Vector2(-100000, 100000)])
+	backdrop.color = Color("38291f")
+	add_child(backdrop)
+	var owned: Array[Vector2i] = []
 	for row in range(Layout.ROOM_ROWS):
-		for column in range(Layout.TOTAL_COLUMNS):
-			var cell := Vector2i(column, row)
-			if column < Layout.INITIAL_COLUMNS or cell in expansion_cells:
-				_sprite(FLOOR, origin + Vector2(column, row) * size)
-			elif column >= Layout.INITIAL_COLUMNS:
-				var outline := Line2D.new()
-				outline.points = PackedVector2Array([origin + Vector2(column, row) * size, origin + Vector2(column + 1, row) * size, origin + Vector2(column + 1, row + 1) * size, origin + Vector2(column, row + 1) * size, origin + Vector2(column, row) * size])
-				outline.width = 1.0
-				outline.default_color = Color("71452c")
-				add_child(outline)
+		for column in range(Layout.INITIAL_COLUMNS): owned.append(Vector2i(column, row))
+	for cell in expansion_cells: owned.append(cell)
+	for cell in owned: _sprite(FLOOR, origin + Vector2(cell) * size)
+	if preview_enabled:
+		for cell in Layout.frontier(expansion_cells):
+			var position := origin + Vector2(cell) * size
+			_sprite(FLOOR, position).modulate = Color(1.0, 0.92, 0.68, 0.46)
+			var outline := Line2D.new()
+			outline.points = PackedVector2Array([position, position + Vector2(size, 0), position + Vector2(size, size), position + Vector2(0, size), position])
+			outline.width = 3.0
+			outline.default_color = Color("edbc72")
+			add_child(outline)
 	# Keep the original doorway, menu board and register as independent decorative regions.
 	_region(Rect2(0, 0, 1216, 130), Vector2(32, 170))
 	_region(Rect2(0, 125, 265, 120), Vector2(32, 295))
-	for column in range(Layout.INITIAL_COLUMNS, Layout.TOTAL_COLUMNS):
-		_sprite(WALL, Vector2(origin.x + column * size, 170))
-	for column in range(Layout.TOTAL_COLUMNS):
-		_sprite(BORDER, Vector2(origin.x + column * size, 685))
+	for cell in owned:
+		if cell.y == 0 and cell.x >= Layout.INITIAL_COLUMNS:
+			_sprite(WALL, Vector2(origin.x + cell.x * size, 170))
+		if cell.x == 0:
+			var side := _sprite(BORDER, Vector2(56, origin.y + cell.y * size))
+			side.rotation = PI / 2.0
 	var blockers := StaticBody2D.new()
 	blockers.collision_layer = 1
 	blockers.collision_mask = 0
 	add_child(blockers)
-	for row in range(Layout.ROOM_ROWS):
-		for column in range(Layout.INITIAL_COLUMNS, Layout.TOTAL_COLUMNS):
-			if Vector2i(column, row) not in expansion_cells:
-				_block(blockers, origin + Vector2(column + 0.5, row + 0.5) * size, Vector2(size, size))
-	_block(blockers, Vector2(1648, 485), Vector2(16, 400))
-	_block(blockers, Vector2(1440, 691), Vector2(400, 14))
-	_block(blockers, Vector2(1440, 226), Vector2(400, 132))
+	for cell in owned:
+		var top_left := origin + Vector2(cell) * size
+		if not Layout.owned_cell(cell + Vector2i.LEFT, expansion_cells): _block(blockers, top_left + Vector2(0, size * 0.5), Vector2(8, size))
+		if not Layout.owned_cell(cell + Vector2i.RIGHT, expansion_cells): _block(blockers, top_left + Vector2(size, size * 0.5), Vector2(8, size))
+		if not Layout.owned_cell(cell + Vector2i.UP, expansion_cells): _block(blockers, top_left + Vector2(size * 0.5, 0), Vector2(size, 8))
+		if not Layout.owned_cell(cell + Vector2i.DOWN, expansion_cells): _block(blockers, top_left + Vector2(size * 0.5, size), Vector2(size, 8))
 
 
-func _sprite(texture: Texture2D, position: Vector2) -> void:
+func _sprite(texture: Texture2D, position: Vector2) -> Sprite2D:
 	var sprite := Sprite2D.new()
 	sprite.texture = texture
 	sprite.centered = false
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.position = position
 	add_child(sprite)
+	return sprite
 
 
 func _region(rect: Rect2, position: Vector2) -> void:

@@ -2,13 +2,12 @@ extends Node2D
 ## One worker instance; the model owns shared task reservations and per-worker carry state.
 
 const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
+const Layout = preload("res://scripts/layout_rules.gd")
 const SPEED := 160.0
 const IDLE_SPEED := 48.0
 const IDLE_RADIUS := 68.0
 const CELL := 20.0
 const GRID_ORIGIN := Vector2(70, 310)
-const GRID_WIDTH := 80
-const GRID_HEIGHT := 18
 const HOME := Vector2(375, 570)
 const WORK_LABELS := {"cook": "做菜", "serve": "上菜", "clear": "收盘", "clean": "清洁"}
 
@@ -26,6 +25,8 @@ var failure_reason := ""
 var route: PackedVector2Array = PackedVector2Array()
 var route_index := 0
 var grid: AStarGrid2D
+var grid_width := 58
+var grid_height := 18
 var cook_rules: RefCounted
 var failed_until: Dictionary = {}
 var clock := 0.0
@@ -313,8 +314,11 @@ func move_priority_up(kind: String) -> void:
 
 
 func _build_grid() -> void:
+	var bounds: Vector2 = Layout.owned_bounds(model.expansion_cells)
+	grid_width = maxi(58, ceili((bounds.x - GRID_ORIGIN.x) / CELL) + 2)
+	grid_height = maxi(18, ceili((bounds.y - GRID_ORIGIN.y) / CELL) + 2)
 	grid = AStarGrid2D.new()
-	grid.region = Rect2i(0, 0, GRID_WIDTH, GRID_HEIGHT)
+	grid.region = Rect2i(0, 0, grid_width, grid_height)
 	grid.cell_size = Vector2(CELL, CELL)
 	grid.offset = GRID_ORIGIN
 	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
@@ -325,8 +329,8 @@ func _build_grid() -> void:
 	var query := PhysicsShapeQueryParameters2D.new()
 	query.shape = shape
 	query.collision_mask = 1
-	for x in range(GRID_WIDTH):
-		for y in range(GRID_HEIGHT):
+	for x in range(grid_width):
+		for y in range(grid_height):
 			var point := Vector2i(x, y)
 			query.transform = Transform2D(0.0, grid.get_point_position(point))
 			if not space.intersect_shape(query, 1).is_empty(): grid.set_point_solid(point)
@@ -353,8 +357,8 @@ func _route_to(destination: Vector2) -> bool:
 func _nearest_open(point: Vector2, max_distance: float) -> Vector2i:
 	var best := Vector2i(-1, -1)
 	var distance := max_distance
-	for x in range(GRID_WIDTH):
-		for y in range(GRID_HEIGHT):
+	for x in range(grid_width):
+		for y in range(grid_height):
 			var cell := Vector2i(x, y)
 			if grid.is_point_solid(cell): continue
 			var value := grid.get_point_position(cell).distance_to(point)

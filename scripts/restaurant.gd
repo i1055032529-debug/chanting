@@ -57,10 +57,8 @@ var layout_new_table := false
 var layout_preview_position := Vector2.ZERO
 var layout_preview_table: Node2D
 var layout_preview_chair: Node2D
-var camera_focus_x := 640.0
+var camera_focus := Vector2(640, 400)
 var expansion_panel: Panel
-var expansion_selected := Vector2i(-1, -1)
-var expansion_buttons: Dictionary = {}
 var expansion_labels: Dictionary = {}
 var hire_button: Button
 var dismiss_button: Button
@@ -102,7 +100,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	$Camera.position.x = clampf(player.position.x, 640.0, 1000.0) if model.phase == "open" else camera_focus_x
+	$Camera.position = Vector2(maxf(player.position.x, 640.0), maxf(player.position.y, 400.0)) if model.phase == "open" else camera_focus
 	toast_time = maxf(0.0, toast_time - delta)
 	model.advance(delta)
 	player.locked = is_instance_valid(cooking_screen) or model.phase != "open"
@@ -151,8 +149,13 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_instance_valid(cooking_screen) or model.phase == "summary": return
+	if model.phase == "preopen" and expansion_panel.visible and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if event.position.y > 166.0 and event.position.y < 700.0 and not expansion_panel.get_global_rect().has_point(event.position):
+			_click_expansion(get_global_mouse_position())
+			get_viewport().set_input_as_handled()
+		return
 	if model.phase == "preopen" and layout_panel.visible and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		if event.position.x > 320.0 and event.position.y > 300.0 and event.position.y < 670.0:
+		if event.position.x > 320.0 and event.position.y > 300.0 and event.position.y < 700.0:
 			if layout_editing:
 				var world_position := get_global_mouse_position()
 				layout_preview_position = Vector2(roundi(world_position.x / 10.0) * 10, roundi(world_position.y / 10.0) * 10)
@@ -216,10 +219,11 @@ func reset_run() -> void:
 	_cancel_layout_preview()
 	if layout_panel != null: layout_panel.hide()
 	if expansion_panel != null: expansion_panel.hide()
+	$Background.set_expansion_preview(false)
 	_clear_scene_day()
 	model.new_game()
 	$Background.set_expansion(model.expansion_cells)
-	camera_focus_x = 640.0
+	camera_focus = Vector2(640, 400)
 	_sync_layout_nodes()
 	for worker in employees: worker.reset_new_game()
 	selected_employee_index = 0
@@ -249,6 +253,7 @@ func start_day() -> bool:
 	management_panel.hide()
 	layout_panel.hide()
 	expansion_panel.hide()
+	$Background.set_expansion_preview(false)
 	_refresh_employee_presence()
 	player.locked = false
 	_refresh_ui()
@@ -624,29 +629,25 @@ func _build_layout_panel() -> void:
 	layout_labels["confirm"] = _make_button(layout_panel, "确认位置", Rect2(18, 402, 124, 35), _confirm_layout_preview)
 	layout_labels["cancel"] = _make_button(layout_panel, "取消布置", Rect2(153, 402, 124, 35), _cancel_layout_preview)
 	_make_button(layout_panel, "返回开店准备", Rect2(18, 446, 259, 32), _toggle_layout)
-	_make_button(layout_panel, "◀ 查看左侧", Rect2(18, 486, 125, 32), func(): _move_camera_focus(-160.0))
-	_make_button(layout_panel, "查看右侧 ▶", Rect2(152, 486, 125, 32), func(): _move_camera_focus(160.0))
+	_make_button(layout_panel, "←", Rect2(18, 486, 55, 32), func(): _move_camera_focus(Vector2(-160, 0)))
+	_make_button(layout_panel, "→", Rect2(82, 486, 55, 32), func(): _move_camera_focus(Vector2(160, 0)))
+	_make_button(layout_panel, "↑", Rect2(146, 486, 55, 32), func(): _move_camera_focus(Vector2(0, -120)))
+	_make_button(layout_panel, "↓", Rect2(210, 486, 67, 32), func(): _move_camera_focus(Vector2(0, 120)))
 	_refresh_layout_panel()
 
 
 func _build_expansion_panel() -> void:
-	expansion_panel = _panel(Rect2(325, 150, 630, 540), Color("30291f"))
+	expansion_panel = _panel(Rect2(20, 170, 300, 230), Color("30291f"))
 	expansion_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	expansion_panel.hide()
-	_child_label(expansion_panel, "逐格扩建", Vector2(28, 19), Vector2(400, 43), 28, GOLD)
-	expansion_labels["balance"] = _child_label(expansion_panel, "", Vector2(28, 65), Vector2(565, 28), 16, CREAM)
-	_child_label(expansion_panel, "左侧是现有店面；点击右侧相邻空地，每次只扩建一格。", Vector2(28, 96), Vector2(565, 25), 14, MUTED)
-	var original := _panel(Rect2(28, 140, 105, 290), Color("c57632"))
-	original.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_child_label(expansion_panel, "现有\n店面", Vector2(50, 252), Vector2(70, 60), 18, CREAM)
-	for row in range(Layout.ROOM_ROWS):
-		for column in range(Layout.INITIAL_COLUMNS, Layout.TOTAL_COLUMNS):
-			var cell := Vector2i(column, row)
-			var button := _make_button(expansion_panel, "", Rect2(155 + (column - Layout.INITIAL_COLUMNS) * 87, 140 + row * 59, 74, 51), func(): _select_expansion(cell))
-			expansion_buttons[cell] = button
-	expansion_labels["status"] = _child_label(expansion_panel, "", Vector2(28, 445), Vector2(565, 25), 15, CREAM)
-	expansion_labels["confirm"] = _make_button(expansion_panel, "确认扩建", Rect2(28, 485, 270, 40), _confirm_expansion)
-	_make_button(expansion_panel, "返回开店准备", Rect2(326, 485, 270, 40), _toggle_expansion)
+	_child_label(expansion_panel, "逐格扩建", Vector2(18, 14), Vector2(265, 40), 25, GOLD)
+	expansion_labels["balance"] = _child_label(expansion_panel, "", Vector2(18, 57), Vector2(265, 28), 15, CREAM)
+	_child_label(expansion_panel, "点击场景中发光的相邻地块，立即铺设。\n可向右、向下不断扩展。", Vector2(18, 88), Vector2(265, 53), 14, MUTED)
+	_make_button(expansion_panel, "←", Rect2(18, 146, 55, 32), func(): _move_camera_focus(Vector2(-160, 0)))
+	_make_button(expansion_panel, "→", Rect2(82, 146, 55, 32), func(): _move_camera_focus(Vector2(160, 0)))
+	_make_button(expansion_panel, "↑", Rect2(146, 146, 55, 32), func(): _move_camera_focus(Vector2(0, -120)))
+	_make_button(expansion_panel, "↓", Rect2(210, 146, 67, 32), func(): _move_camera_focus(Vector2(0, 120)))
+	_make_button(expansion_panel, "结束扩建", Rect2(18, 187, 259, 32), _toggle_expansion)
 	_refresh_expansion_panel()
 
 
@@ -658,44 +659,30 @@ func _toggle_expansion() -> void:
 		management_panel.hide()
 		layout_panel.hide()
 	preopen_panel.visible = not expansion_panel.visible
-	_refresh_expansion_panel()
-
-
-func _select_expansion(cell: Vector2i) -> void:
-	expansion_selected = cell
+	$Background.set_expansion_preview(expansion_panel.visible)
 	_refresh_expansion_panel()
 
 
 func _refresh_expansion_panel() -> void:
 	if expansion_panel == null: return
-	expansion_labels.balance.text = "可用 %d 金币 · 每格 %d 金币 · 已扩建 %d 格" % [model.spendable_cash(), Model.EXPANSION_PRICE, model.expansion_cells.size()]
-	for cell: Vector2i in expansion_buttons:
-		var button: Button = expansion_buttons[cell]
-		button.text = "✓" if cell in model.expansion_cells else "+" if model.can_expand(cell) else "·"
-		button.modulate = GREEN if cell in model.expansion_cells else GOLD if model.can_expand(cell) else MUTED
-		if cell == expansion_selected: button.modulate = Color("fff4c7")
-	var selected_valid: bool = model.can_expand(expansion_selected)
-	expansion_labels.status.text = "已选：%s · %s" % ["%d 列 %d 行" % [expansion_selected.x - Layout.INITIAL_COLUMNS + 1, expansion_selected.y + 1] if expansion_selected.x >= Layout.INITIAL_COLUMNS else "未选择", "可扩建" if selected_valid else "请选择与店面相邻的空格"]
-	expansion_labels.confirm.disabled = not selected_valid or model.spendable_cash() < Model.EXPANSION_PRICE
+	expansion_labels.balance.text = "可用 %d · 每格 %d · 已扩建 %d 格" % [model.spendable_cash(), Model.EXPANSION_PRICE, model.expansion_cells.size()]
 
 
-func _confirm_expansion() -> void:
-	if not model.buy_expansion(expansion_selected): return
+func _click_expansion(point: Vector2) -> bool:
+	var cell := Vector2i(floori((point.x - Layout.ROOM_ORIGIN.x) / Layout.ROOM_CELL), floori((point.y - Layout.ROOM_ORIGIN.y) / Layout.ROOM_CELL))
+	if not model.can_expand(cell) or not model.buy_expansion(cell): return false
 	$Background.set_expansion(model.expansion_cells)
-	camera_focus_x = clampf(Layout.ROOM_ORIGIN.x + (expansion_selected.x + 0.5) * Layout.ROOM_CELL, 640.0, 1000.0)
-	$Camera.position.x = camera_focus_x
-	_sync_layout_nodes()
-	expansion_panel.hide()
-	preopen_panel.hide()
-	layout_panel.show()
-	_refresh_layout_panel()
+	for worker in employees: worker.grid = null
 	_refresh_expansion_panel()
+	return true
 
 
-func _move_camera_focus(amount: float) -> void:
-	if model.phase != "preopen" or not layout_panel.visible: return
-	camera_focus_x = clampf(camera_focus_x + amount, 640.0, 1000.0)
-	$Camera.position.x = camera_focus_x
+func _move_camera_focus(amount: Vector2) -> void:
+	if model.phase != "preopen" or (not layout_panel.visible and not expansion_panel.visible): return
+	var edge := Layout.owned_bounds(model.expansion_cells) + Vector2(Layout.ROOM_CELL, Layout.ROOM_CELL)
+	camera_focus.x = clampf(camera_focus.x + amount.x, 640.0, maxf(640.0, edge.x - 500.0))
+	camera_focus.y = clampf(camera_focus.y + amount.y, 400.0, maxf(400.0, edge.y - 300.0))
+	$Camera.position = camera_focus
 
 
 func _toggle_layout() -> void:
@@ -709,6 +696,7 @@ func _toggle_layout() -> void:
 		store_panel.hide()
 		management_panel.hide()
 		expansion_panel.hide()
+		$Background.set_expansion_preview(false)
 		preopen_panel.hide()
 		layout_panel.show()
 	_refresh_layout_panel()
@@ -890,6 +878,7 @@ func _toggle_store() -> void:
 	if store_panel.visible:
 		management_panel.hide()
 		expansion_panel.hide()
+		$Background.set_expansion_preview(false)
 	preopen_panel.visible = not store_panel.visible
 	_refresh_store_panel()
 
@@ -1009,7 +998,9 @@ func _toggle_management() -> void:
 		layout_panel.hide()
 	management_panel.visible = not management_panel.visible
 	if management_panel.visible: store_panel.hide()
-	if management_panel.visible: expansion_panel.hide()
+	if management_panel.visible:
+		expansion_panel.hide()
+		$Background.set_expansion_preview(false)
 	if model.phase == "preopen": preopen_panel.visible = not management_panel.visible
 	_refresh_employee_panel()
 

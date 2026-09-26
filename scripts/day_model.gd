@@ -182,9 +182,10 @@ func buy_table(destination: Vector2 = Vector2.ZERO) -> bool:
 
 
 func can_expand(cell: Vector2i) -> bool:
-	if phase != "preopen" or cell.x < Layout.INITIAL_COLUMNS or cell.x >= Layout.TOTAL_COLUMNS or cell.y < 0 or cell.y >= Layout.ROOM_ROWS or cell in expansion_cells: return false
-	if cell.x == Layout.INITIAL_COLUMNS: return true
-	return cell + Vector2i.LEFT in expansion_cells or cell + Vector2i.RIGHT in expansion_cells or cell + Vector2i.UP in expansion_cells or cell + Vector2i.DOWN in expansion_cells
+	if phase != "preopen" or cell.x < 0 or cell.y < 0 or Layout.owned_cell(cell, expansion_cells): return false
+	for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		if Layout.owned_cell(cell + direction, expansion_cells): return true
+	return false
 
 
 func buy_expansion(cell: Vector2i) -> bool:
