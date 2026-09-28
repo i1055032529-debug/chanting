@@ -12,6 +12,7 @@ const StainScript = preload("res://scripts/stain.gd")
 const EmployeeScene = preload("res://scenes/actors/employee.tscn")
 const Layout = preload("res://scripts/layout_rules.gd")
 const DISH_SHEET = preload("res://assets/recipes/dishes.png")
+const STAFF_SHEET = preload("res://assets/characters/chef.png")
 const INTERACT_DISTANCE := 55.0
 const DESK_DISTANCE := 95.0
 const MENU_DESK := Vector2(350, 435)
@@ -61,6 +62,20 @@ var preopen_access_button: Button
 var summary_panel: Panel
 var summary_text: Label
 var management_panel: Panel
+var management_list_page: Control
+var management_detail_page: Control
+var management_hire_page: Control
+var staff_list_scroll: ScrollContainer
+var staff_list_items: VBoxContainer
+var hire_list_scroll: ScrollContainer
+var hire_list_items: VBoxContainer
+var management_page := "list"
+var selected_staff_id := ""
+var staff_settings_by_id: Dictionary = {}
+var staff_detail_name: Label
+var staff_detail_bio: Label
+var staff_detail_cost: Label
+var staff_detail_avatar: Sprite2D
 var layout_panel: Panel
 var layout_labels: Dictionary = {}
 var layout_selected := 0
@@ -73,7 +88,6 @@ var camera_focus := Vector2(640, 400)
 var expansion_panel: Panel
 var expansion_labels: Dictionary = {}
 var hire_button: Button
-var dismiss_button: Button
 var select_previous_button: Button
 var select_next_button: Button
 var management_title: Label
@@ -97,6 +111,7 @@ func _ready() -> void:
 	font = SystemFont.new()
 	font.font_names = PackedStringArray(["PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"])
 	_build_room()
+	_apply_staff_roster_settings()
 	_build_ui()
 	player.locked = true
 	model.customer_requested.connect(_spawn_customer)
@@ -241,7 +256,10 @@ func reset_run() -> void:
 	camera_focus = Vector2(640, 400)
 	_sync_layout_nodes()
 	for worker in employees: worker.reset_new_game()
+	staff_settings_by_id.clear()
+	_apply_staff_roster_settings()
 	selected_employee_index = 0
+	selected_staff_id = ""
 	preopen_panel.show()
 	_refresh_employee_presence()
 	_show_feedback("新游戏已建立。准备第 1 天营业。")
@@ -250,13 +268,13 @@ func reset_run() -> void:
 
 func prepare_next_day() -> bool:
 	if model.phase != "summary": return false
+	_snapshot_staff_settings()
 	_clear_scene_day()
-	var old_staff_count := model.employee_hired_count
 	if not model.next_day(): return false
-	if old_staff_count != model.employee_hired_count:
-		for i in range(mini(old_staff_count, model.employee_hired_count), maxi(old_staff_count, model.employee_hired_count)):
-			employees[i].reset_new_game()
-	for worker in employees: worker.reset_day()
+	for worker in employees: worker.reset_new_game()
+	_apply_staff_roster_settings()
+	selected_staff_id = ""
+	selected_employee_index = mini(selected_employee_index, maxi(0, model.employee_hired_count - 1))
 	preopen_panel.show()
 	_refresh_employee_presence()
 	_show_feedback("第 %d 天准备就绪。" % model.day_number)
@@ -529,29 +547,46 @@ func _build_ui() -> void:
 	_label("controls", "WASD 移动  E 交互  Q 订单  左侧靠近柜台查看菜谱/雇佣", Vector2(738, 752), Vector2(520, 28), 14, MUTED)
 	debug_label = _label("debug", "", Vector2(35, 370), Vector2(640, 260), 12, CREAM)
 	debug_label.visible = false
-	management_panel = _panel(Rect2(808, 167, 445, 490), Color("30291f"))
+	management_panel = _panel(Rect2(700, 167, 555, 515), Color("30291f"))
 	management_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	management_panel.hide()
-	management_title = _child_label(management_panel, "员工工作安排", Vector2(20, 15), Vector2(300, 42), 26, GOLD)
-	_child_label(management_panel, "选择员工，单独设置工作与优先级。", Vector2(20, 57), Vector2(290, 32), 14, MUTED)
-	select_previous_button = _make_button(management_panel, "←", Rect2(335, 55, 40, 30), func(): _select_employee(-1))
-	select_next_button = _make_button(management_panel, "→", Rect2(385, 55, 40, 30), func(): _select_employee(1))
-	hire_button = _make_button(management_panel, "雇佣 +", Rect2(20, 95, 120, 32), _toggle_hire)
-	dismiss_button = _make_button(management_panel, "减少 −", Rect2(150, 95, 120, 32), _dismiss_employee)
-	employment_label = _child_label(management_panel, "", Vector2(280, 96), Vector2(150, 29), 14, CREAM)
-	work_buttons["employee_enabled"] = _make_button(management_panel, "", Rect2(20, 137, 170, 32), _toggle_employee)
+	management_title = _child_label(management_panel, "员工管理", Vector2(20, 13), Vector2(350, 42), 26, GOLD)
+	_make_button(management_panel, "关闭", Rect2(449, 17, 86, 32), _toggle_management)
+	employment_label = _child_label(management_panel, "", Vector2(20, 57), Vector2(510, 28), 15, CREAM)
+	management_list_page = _management_page_root()
+	hire_button = _make_button(management_list_page, "＋", Rect2(459, 3, 72, 36), _show_hire_page)
+	_child_label(management_list_page, "已雇佣员工（点击卡片查看详情）", Vector2(20, 7), Vector2(400, 28), 17, GOLD)
+	staff_list_scroll = _staff_scroll(management_list_page, Vector2(20, 49), Vector2(515, 325))
+	staff_list_items = _staff_list_contents(staff_list_scroll)
+	_child_label(management_list_page, "雇佣与解除次日生效；今日出勤和工资不变。", Vector2(20, 385), Vector2(515, 28), 14, MUTED)
+	management_hire_page = _management_page_root()
+	_make_button(management_hire_page, "← 返回", Rect2(20, 4, 105, 34), _show_management_list)
+	_child_label(management_hire_page, "可雇佣员工 · 日薪均为 18 金币", Vector2(145, 8), Vector2(385, 27), 17, GOLD)
+	hire_list_scroll = _staff_scroll(management_hire_page, Vector2(20, 49), Vector2(515, 325))
+	hire_list_items = _staff_list_contents(hire_list_scroll)
+	_child_label(management_hire_page, "点击员工卡片预约雇佣；最多同时雇佣 3 人。", Vector2(20, 385), Vector2(515, 28), 14, MUTED)
+	management_detail_page = _management_page_root()
+	_make_button(management_detail_page, "← 返回列表", Rect2(20, 3, 130, 34), _show_management_list)
+	select_previous_button = _make_button(management_detail_page, "←", Rect2(439, 44, 43, 31), func(): _select_employee(-1))
+	select_next_button = _make_button(management_detail_page, "→", Rect2(490, 44, 43, 31), func(): _select_employee(1))
+	staff_detail_avatar = _staff_avatar("lin", Vector2(24, 46), 0.88)
+	management_detail_page.add_child(staff_detail_avatar)
+	staff_detail_name = _child_label(management_detail_page, "", Vector2(105, 48), Vector2(320, 34), 23, GOLD)
+	staff_detail_bio = _child_label(management_detail_page, "", Vector2(105, 84), Vector2(400, 28), 15, CREAM)
+	staff_detail_cost = _child_label(management_detail_page, "", Vector2(105, 111), Vector2(400, 27), 15, MUTED)
+	work_buttons["employee_enabled"] = _make_button(management_detail_page, "", Rect2(20, 146, 173, 34), _toggle_employee)
 	for i in range(4):
 		var row_kind: String = ["serve", "clear", "cook", "clean"][i]
-		var row_y := 181 + i * 57
-		var row := _child_label(management_panel, "", Vector2(20, row_y), Vector2(200, 34), 18, CREAM)
+		var row_y := 195 + i * 47
+		var row := _child_label(management_detail_page, "", Vector2(20, row_y), Vector2(200, 34), 18, CREAM)
 		work_buttons["label_" + row_kind] = row
-		var toggle := _make_button(management_panel, "开 / 关", Rect2(246, row_y, 80, 32), func(): _toggle_employee_work(row_kind))
+		var toggle := _make_button(management_detail_page, "开 / 关", Rect2(272, row_y, 93, 32), func(): _toggle_employee_work(row_kind))
 		work_buttons["toggle_" + row_kind] = toggle
-		var up_button := _make_button(management_panel, "↑ 优先", Rect2(336, row_y, 89, 32), func(): _move_employee_priority(row_kind))
+		var up_button := _make_button(management_detail_page, "↑ 优先", Rect2(380, row_y, 147, 32), func(): _move_employee_priority(row_kind))
 		work_buttons["up_" + row_kind] = up_button
-	management_status = _child_label(management_panel, "", Vector2(20, 402), Vector2(420, 28), 13, CREAM)
-	_child_label(management_panel, "人数设置次日生效；今日出勤与工资保持不变。", Vector2(20, 437), Vector2(420, 24), 13, MUTED)
-	_make_button(management_panel, "关闭", Rect2(335, 15, 90, 32), _toggle_management)
+	management_status = _child_label(management_detail_page, "", Vector2(20, 389), Vector2(515, 26), 14, CREAM)
+	management_hire_page.hide()
+	management_detail_page.hide()
 	preopen_panel = _panel(Rect2(325, 200, 630, 400), Color("30291f"))
 	preopen_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_child_label(preopen_panel, "开店准备", Vector2(34, 24), Vector2(550, 48), 30, GOLD)
@@ -607,6 +642,189 @@ func _build_ui() -> void:
 	expansion_panel.reparent(modal_root)
 	summary_panel.reparent(modal_root)
 	reset_dialog.reparent(modal_root)
+
+
+func _management_page_root() -> Control:
+	var page := Control.new()
+	page.position = Vector2(0, 94)
+	page.size = Vector2(555, 420)
+	page.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	management_panel.add_child(page)
+	return page
+
+
+func _staff_scroll(parent: Control, at: Vector2, dimensions: Vector2) -> ScrollContainer:
+	var scroll := ScrollContainer.new()
+	scroll.position = at
+	scroll.size = dimensions
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	parent.add_child(scroll)
+	return scroll
+
+
+func _staff_list_contents(scroll: ScrollContainer) -> VBoxContainer:
+	var contents := VBoxContainer.new()
+	contents.custom_minimum_size.x = 494
+	contents.add_theme_constant_override("separation", 8)
+	scroll.add_child(contents)
+	return contents
+
+
+func _staff_avatar(profile_id: String, at: Vector2, size_scale: float) -> Sprite2D:
+	var atlas := AtlasTexture.new()
+	atlas.atlas = STAFF_SHEET
+	atlas.region = Rect2(0, 0, 64, 88)
+	var portrait := Sprite2D.new()
+	portrait.texture = atlas
+	portrait.centered = false
+	portrait.position = at
+	portrait.scale = Vector2.ONE * size_scale
+	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	portrait.modulate = Model.STAFF_PROFILES[profile_id].color
+	return portrait
+
+
+func _staff_card(profile_id: String, candidate: bool) -> Panel:
+	var row := Panel.new()
+	row.name = profile_id
+	row.custom_minimum_size = Vector2(494, 114)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("493321")
+	style.border_color = Color("a6784b")
+	style.set_border_width_all(2)
+	row.add_theme_stylebox_override("panel", style)
+	var content_width := 478 if candidate else 369
+	var open := _make_button(row, "", Rect2(8, 7, content_width, 100), func(): _hire_profile(profile_id) if candidate else _open_staff_detail(profile_id))
+	open.add_child(_staff_avatar(profile_id, Vector2(10, 15), 0.69))
+	_child_label(open, Model.STAFF_PROFILES[profile_id].name, Vector2(67, 8), Vector2(295, 26), 19, GOLD)
+	_child_label(open, Model.STAFF_PROFILES[profile_id].bio, Vector2(67, 32), Vector2(296, 22), 14, CREAM)
+	_child_label(open, "工作设置：" + _staff_work_summary(profile_id), Vector2(67, 55), Vector2(300, 21), 13, CREAM)
+	_child_label(open, "雇佣费用：%d 金币/日%s" % [Model.DAILY_WAGE, " · 次日到岗" if candidate or profile_id not in model.staff_roster else ""], Vector2(67, 77), Vector2(300, 19), 12, MUTED)
+	if candidate:
+		open.disabled = model.planned_employee_count() >= Model.MAX_EMPLOYEES
+	else:
+		var remove := _make_button(row, "解除雇佣", Rect2(383, 35, 101, 43), func(): _dismiss_profile(profile_id))
+		remove.tooltip_text = "次日生效"
+	return row
+
+
+func _rebuild_staff_lists() -> void:
+	for child in staff_list_items.get_children():
+		staff_list_items.remove_child(child)
+		child.queue_free()
+	for child in hire_list_items.get_children():
+		hire_list_items.remove_child(child)
+		child.queue_free()
+	var planned := model.planned_staff_ids()
+	for profile_id: String in planned: staff_list_items.add_child(_staff_card(profile_id, false))
+	for profile_id: String in Model.STAFF_PROFILE_IDS:
+		if profile_id not in planned: hire_list_items.add_child(_staff_card(profile_id, true))
+	if planned.is_empty():
+		_child_label(staff_list_items, "尚未安排员工，点击右上角 ＋ 选择。", Vector2(8, 15), Vector2(470, 40), 16, MUTED)
+	if model.planned_employee_count() >= Model.MAX_EMPLOYEES:
+		_child_label(hire_list_items, "名额已满，可先在员工列表解除一人。", Vector2(8, 15), Vector2(470, 40), 15, MUTED)
+	_refresh_employee_panel()
+
+
+func _show_management_list() -> void:
+	management_page = "list"
+	management_list_page.show()
+	management_hire_page.hide()
+	management_detail_page.hide()
+	_rebuild_staff_lists()
+
+
+func _show_hire_page() -> void:
+	management_page = "hire"
+	management_list_page.hide()
+	management_hire_page.show()
+	management_detail_page.hide()
+	_rebuild_staff_lists()
+
+
+func _open_staff_detail(profile_id: String) -> void:
+	if profile_id not in model.planned_staff_ids(): return
+	selected_staff_id = profile_id
+	selected_employee_index = maxi(0, model.staff_roster.find(profile_id))
+	management_page = "detail"
+	management_list_page.hide()
+	management_hire_page.hide()
+	management_detail_page.show()
+	_refresh_employee_panel()
+
+
+func _hire_profile(profile_id: String) -> void:
+	if model.schedule_hire_profile(profile_id): _show_management_list()
+
+
+func _dismiss_profile(profile_id: String) -> void:
+	if model.schedule_dismiss_profile(profile_id): _show_management_list()
+
+
+func _snapshot_staff_settings() -> void:
+	for i in range(model.staff_roster.size()):
+		var worker = employees[i]
+		staff_settings_by_id[model.staff_roster[i]] = {
+			"enabled": worker.enabled,
+			"work_enabled": worker.work_enabled.duplicate(true),
+			"priority": worker.priority.duplicate(),
+		}
+
+
+func _staff_settings_for(profile_id: String) -> Dictionary:
+	var active_index := model.staff_roster.find(profile_id)
+	if active_index >= 0 and active_index < employees.size():
+		var worker = employees[active_index]
+		return {
+			"enabled": worker.enabled,
+			"work_enabled": worker.work_enabled.duplicate(true),
+			"priority": worker.priority.duplicate(),
+		}
+	if staff_settings_by_id.has(profile_id): return staff_settings_by_id[profile_id].duplicate(true)
+	return {
+		"enabled": true,
+		"work_enabled": {"serve": true, "clear": true, "clean": true, "cook": true},
+		"priority": ["serve", "clear", "clean", "cook"],
+	}
+
+
+func _apply_selected_staff_settings(profile_id: String, settings: Dictionary) -> void:
+	staff_settings_by_id[profile_id] = settings.duplicate(true)
+	var active_index := model.staff_roster.find(profile_id)
+	if active_index < 0 or active_index >= employees.size(): return
+	var worker = employees[active_index]
+	worker.enabled = settings.enabled
+	worker.work_enabled = settings.work_enabled.duplicate(true)
+	var priority: Array[String] = []
+	for kind: String in settings.priority: priority.append(kind)
+	worker.priority = priority
+
+
+func _apply_staff_roster_settings() -> void:
+	for i in range(employees.size()):
+		var worker = employees[i]
+		if i >= model.staff_roster.size(): continue
+		var profile_id: String = model.staff_roster[i]
+		var profile: Dictionary = Model.STAFF_PROFILES[profile_id]
+		worker.avatar.sprite.modulate = profile.color
+		worker.title_label.text = profile.name
+		if staff_settings_by_id.has(profile_id):
+			_apply_selected_staff_settings(profile_id, staff_settings_by_id[profile_id])
+
+
+func _staff_work_summary(profile_id: String) -> String:
+	var settings := _staff_settings_for(profile_id)
+	if not settings.enabled: return "休息中"
+	var kinds: Array[String] = []
+	for kind: String in settings.priority:
+		if settings.work_enabled[kind]: kinds.append(employees[0].WORK_LABELS[kind])
+	return "、".join(kinds) if not kinds.is_empty() else "未分配任务"
+
+
+func _selected_profile_id() -> String:
+	if selected_staff_id != "" and selected_staff_id in model.planned_staff_ids(): return selected_staff_id
+	if selected_employee_index >= 0 and selected_employee_index < model.staff_roster.size(): return model.staff_roster[selected_employee_index]
+	return ""
 
 
 func _build_store_panel() -> void:
@@ -1157,29 +1375,36 @@ func _toggle_management() -> void:
 	if management_panel.visible: preopen_panel.hide()
 	player.locked = management_panel.visible
 	if model.phase == "open": get_tree().paused = management_panel.visible
+	if management_panel.visible: _show_management_list()
 	_refresh_employee_panel()
 
 
 func _toggle_employee() -> void:
-	if selected_employee_index >= model.employee_hired_count: return
-	var worker = employees[selected_employee_index]
-	worker.enabled = not worker.enabled
+	var profile_id := _selected_profile_id()
+	if profile_id == "": return
+	var settings := _staff_settings_for(profile_id)
+	settings.enabled = not settings.enabled
+	_apply_selected_staff_settings(profile_id, settings)
 	_refresh_employee_panel()
 
 
 func _toggle_hire() -> void:
 	if model.schedule_employee_count(model.planned_employee_count() + 1): _refresh_ui()
+	_rebuild_staff_lists()
 	_refresh_employee_panel()
 
 
 func _dismiss_employee() -> void:
 	if model.schedule_employee_count(model.planned_employee_count() - 1): _refresh_ui()
+	_rebuild_staff_lists()
 	_refresh_employee_panel()
 
 
 func _select_employee(delta: int) -> void:
-	selected_employee_index = clampi(selected_employee_index + delta, 0, maxi(0, model.employee_hired_count - 1))
-	_refresh_employee_panel()
+	var planned := model.planned_staff_ids()
+	if planned.is_empty(): return
+	var current := planned.find(selected_staff_id) if selected_staff_id != "" else selected_employee_index
+	_open_staff_detail(planned[clampi(current + delta, 0, planned.size() - 1)])
 
 
 func _refresh_employee_presence() -> void:
@@ -1188,39 +1413,62 @@ func _refresh_employee_presence() -> void:
 
 
 func _toggle_employee_work(kind: String) -> void:
-	if selected_employee_index >= model.employee_hired_count: return
-	employees[selected_employee_index].toggle_work(kind)
+	var profile_id := _selected_profile_id()
+	if profile_id == "": return
+	var settings := _staff_settings_for(profile_id)
+	settings.work_enabled[kind] = not settings.work_enabled[kind]
+	_apply_selected_staff_settings(profile_id, settings)
+	_rebuild_staff_lists()
 	_refresh_employee_panel()
 
 
 func _move_employee_priority(kind: String) -> void:
-	if selected_employee_index >= model.employee_hired_count: return
-	employees[selected_employee_index].move_priority_up(kind)
+	var profile_id := _selected_profile_id()
+	if profile_id == "": return
+	var settings := _staff_settings_for(profile_id)
+	var order: Array = settings.priority
+	var index := order.find(kind)
+	if index > 0:
+		order.remove_at(index)
+		order.insert(index - 1, kind)
+		settings.priority = order
+		_apply_selected_staff_settings(profile_id, settings)
+		_rebuild_staff_lists()
 	_refresh_employee_panel()
 
 
 func _refresh_employee_panel() -> void:
 	if management_panel == null: return
-	var worker = employees[selected_employee_index]
-	management_title.text = "员工安排 · %d/%d" % [selected_employee_index + 1, model.employee_hired_count] if model.employee_hired_count > 0 else "员工工作安排"
-	for i in range(worker.priority.size()):
-		var kind: String = worker.priority[i]
-		var row_y := 181 + i * 57
+	employment_label.text = "今日 %d 人 · 次日计划 %d 人 · 每人日薪 %d 金币" % [model.employee_hired_count, model.planned_employee_count(), Model.DAILY_WAGE]
+	management_title.text = "员工管理" if management_page == "list" else "可雇佣员工" if management_page == "hire" else "员工详情"
+	if management_page != "detail": return
+	var profile_id := _selected_profile_id()
+	if profile_id == "": return
+	var planned := model.planned_staff_ids()
+	management_title.text = "员工详情 · %d/%d" % [planned.find(profile_id) + 1, planned.size()]
+	var profile: Dictionary = Model.STAFF_PROFILES[profile_id]
+	var portrait: AtlasTexture = staff_detail_avatar.texture
+	portrait.region = Rect2(0, 0, 64, 88)
+	staff_detail_avatar.modulate = profile.color
+	staff_detail_name.text = profile.name
+	staff_detail_bio.text = profile.bio
+	staff_detail_cost.text = "雇佣费用：%d 金币/日 · %s" % [Model.DAILY_WAGE, "次日到岗" if profile_id not in model.staff_roster else "已在岗"]
+	var settings := _staff_settings_for(profile_id)
+	var order: Array = settings.priority
+	for i in range(order.size()):
+		var kind: String = order[i]
+		var row_y := 195 + i * 47
 		work_buttons["label_" + kind].position.y = row_y
 		work_buttons["toggle_" + kind].position.y = row_y
 		work_buttons["up_" + kind].position.y = row_y
-		work_buttons["label_" + kind].text = "%d  %s" % [i + 1, worker.WORK_LABELS[kind]]
-		work_buttons["toggle_" + kind].text = "开启" if worker.work_enabled[kind] else "关闭"
-		work_buttons["toggle_" + kind].disabled = selected_employee_index >= model.employee_hired_count
-		work_buttons["up_" + kind].disabled = i == 0 or selected_employee_index >= model.employee_hired_count
-	hire_button.disabled = model.planned_employee_count() >= Model.MAX_EMPLOYEES
-	dismiss_button.disabled = model.planned_employee_count() == 0
-	select_previous_button.disabled = selected_employee_index <= 0
-	select_next_button.disabled = selected_employee_index >= model.employee_hired_count - 1
-	work_buttons["employee_enabled"].text = "安排休息" if worker.enabled else "安排工作"
-	work_buttons["employee_enabled"].disabled = selected_employee_index >= model.employee_hired_count
-	employment_label.text = "今日%d / 次日%d" % [model.employee_hired_count, model.planned_employee_count()]
-	management_status.text = "当前状态：%s" % worker.status if selected_employee_index < model.employee_attending_count and model.phase == "open" else "当前状态：今日未出勤" if model.phase == "open" and selected_employee_index < model.employee_hired_count else ""
+		work_buttons["label_" + kind].text = "%d  %s" % [i + 1, employees[0].WORK_LABELS[kind]]
+		work_buttons["toggle_" + kind].text = "开启" if settings.work_enabled[kind] else "关闭"
+		work_buttons["up_" + kind].disabled = i == 0
+	select_previous_button.disabled = planned.find(profile_id) <= 0
+	select_next_button.disabled = planned.find(profile_id) >= planned.size() - 1
+	work_buttons["employee_enabled"].text = "安排休息" if settings.enabled else "安排工作"
+	var active_index := model.staff_roster.find(profile_id)
+	management_status.text = "当前状态：%s" % employees[active_index].status if active_index >= 0 and active_index < model.employee_attending_count and model.phase == "open" else "次日到岗后执行以上设置" if active_index < 0 else "今日未出勤"
 
 
 func _show_feedback(message: String) -> void:

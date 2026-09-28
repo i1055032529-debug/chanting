@@ -86,11 +86,11 @@ func _run() -> void:
 	await process_frame
 	game.model.coins = 100
 	game._toggle_management()
-	for i in range(3): game.hire_button.pressed.emit()
-	check(game.model.employee_hired_count == 0 and game.model.planned_employee_count() == 3 and game.hire_button.disabled, "management queues up to three next-day workers")
-	game.dismiss_button.pressed.emit()
+	for profile_id in ["lin", "lan", "qing"]: game._hire_profile(profile_id)
+	check(game.model.employee_hired_count == 0 and game.model.planned_employee_count() == 3 and game.staff_list_items.get_child_count() == 3, "management queues up to three named next-day workers")
+	game._dismiss_profile("qing")
 	check(game.model.planned_employee_count() == 2 and game.model.employee_hired_count == 0, "reducing planned staff leaves current day unchanged")
-	game.hire_button.pressed.emit()
+	game._hire_profile("qing")
 	check(game.model.planned_employee_count() == 3, "planned headcount can be restored")
 	game._toggle_management()
 	check(game.start_day() and game.employees.all(func(worker: Node2D): return not worker.visible), "queued workers do not attend the current day")

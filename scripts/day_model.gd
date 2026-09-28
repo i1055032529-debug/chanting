@@ -21,6 +21,15 @@ const STARTING_CASH := 1000
 const DAILY_WAGE := 18
 const MAX_EMPLOYEES := 3
 const WORKER_IDS := ["employee", "employee_2", "employee_3"]
+const STAFF_PROFILES := {
+	"lin": {"name": "林小禾", "bio": "动作利落，喜欢照看餐桌。", "color": Color("8cbad6")},
+	"lan": {"name": "蓝棠", "bio": "做菜专注，擅长掌握火候。", "color": Color("d6a48c")},
+	"qing": {"name": "青栀", "bio": "手脚勤快，总能及时收拾。", "color": Color("a8c890")},
+	"mei": {"name": "阿梅", "bio": "待客亲切，出餐很稳当。", "color": Color("d5a6ca")},
+	"yan": {"name": "岩生", "bio": "沉着可靠，乐于处理杂务。", "color": Color("c8bd85")},
+	"ning": {"name": "宁夏", "bio": "反应敏捷，喜欢厨房工作。", "color": Color("8fc7b8")},
+}
+const STAFF_PROFILE_IDS := ["lin", "lan", "qing", "mei", "yan", "ning"]
 const INGREDIENTS := {
 	"rice": {"name": "米饭", "price": 2, "starting": 8},
 	"egg": {"name": "鸡蛋", "price": 3, "starting": 8},
@@ -69,6 +78,8 @@ var employee_attending := false
 var employee_hired_count := MAX_EMPLOYEES
 var employee_attending_count := 0
 var scheduled_employee_count := -1
+var staff_roster: Array[String] = []
+var scheduled_staff_roster: Array[String] = []
 var wage_reserved := 0
 var inventory: Dictionary = {}
 var reserved_inventory: Dictionary = {}
@@ -120,6 +131,7 @@ var worker_carry: Dictionary = {}
 func _init(staff_count: int = MAX_EMPLOYEES, opening_cash: int = STARTING_CASH) -> void:
 	initial_employee_count = clampi(staff_count, 0, MAX_EMPLOYEES)
 	initial_cash = maxi(0, opening_cash)
+	staff_roster = _initial_staff_roster()
 	employee_hired_count = initial_employee_count
 	coins = initial_cash
 	day_opening_cash = initial_cash
@@ -219,6 +231,7 @@ func upgrade_equipment() -> bool:
 func set_employee_hired(hired: bool) -> bool:
 	if phase != "preopen" or employee_hired == hired: return false
 	if hired: return hire_employee()
+	staff_roster.clear()
 	employee_hired_count = 0
 	_update_staff_counts()
 	_refresh_wage_reservation()
@@ -228,6 +241,10 @@ func set_employee_hired(hired: bool) -> bool:
 
 func hire_employee() -> bool:
 	if phase != "preopen" or employee_hired_count >= MAX_EMPLOYEES: return false
+	for profile_id: String in STAFF_PROFILE_IDS:
+		if profile_id not in staff_roster:
+			staff_roster.append(profile_id)
+			break
 	employee_hired_count += 1
 	_update_staff_counts()
 	_refresh_wage_reservation()
@@ -240,11 +257,41 @@ func planned_employee_count() -> int:
 	return scheduled_employee_count if scheduled_employee_count >= 0 else employee_hired_count
 
 
+func planned_staff_ids() -> Array[String]:
+	return scheduled_staff_roster.duplicate() if scheduled_employee_count >= 0 else staff_roster.duplicate()
+
+
+func schedule_hire_profile(profile_id: String) -> bool:
+	var planned := planned_staff_ids()
+	if phase not in ["preopen", "open"] or not STAFF_PROFILES.has(profile_id) or profile_id in planned or planned.size() >= MAX_EMPLOYEES: return false
+	planned.append(profile_id)
+	_set_staff_plan(planned)
+	return true
+
+
+func schedule_dismiss_profile(profile_id: String) -> bool:
+	var planned := planned_staff_ids()
+	if phase not in ["preopen", "open"] or profile_id not in planned: return false
+	planned.erase(profile_id)
+	_set_staff_plan(planned)
+	return true
+
+
+func _set_staff_plan(planned: Array[String]) -> void:
+	scheduled_staff_roster = planned
+	scheduled_employee_count = planned.size()
+	feedback.emit("已设置次日雇佣 %d 人；今日员工与工资不变。" % planned.size())
+	changed.emit()
+
+
 func schedule_employee_count(count: int) -> bool:
 	if phase not in ["preopen", "open"] or count < 0 or count > MAX_EMPLOYEES or count == planned_employee_count(): return false
-	scheduled_employee_count = count
-	feedback.emit("已预约次日雇佣 %d 人；今日员工与工资不变。" % count)
-	changed.emit()
+	var planned := planned_staff_ids()
+	while planned.size() > count: planned.pop_back()
+	for profile_id: String in STAFF_PROFILE_IDS:
+		if planned.size() >= count: break
+		if profile_id not in planned: planned.append(profile_id)
+	_set_staff_plan(planned)
 	return true
 
 
@@ -269,6 +316,7 @@ func purchase_recipe_portions(recipe_id: String, target_portions: int) -> bool:
 
 func dismiss_employee() -> bool:
 	if phase != "preopen" or employee_hired_count <= 0: return false
+	staff_roster.pop_back()
 	employee_hired_count -= 1
 	_update_staff_counts()
 	_refresh_wage_reservation()
@@ -932,8 +980,10 @@ func start_day() -> bool:
 func next_day() -> bool:
 	if phase != "summary" or not ended: return false
 	if scheduled_employee_count >= 0:
-		employee_hired_count = scheduled_employee_count
+		staff_roster = scheduled_staff_roster.duplicate()
+		employee_hired_count = staff_roster.size()
 		scheduled_employee_count = -1
+		scheduled_staff_roster.clear()
 		_update_staff_counts()
 	day_number += 1
 	day_opening_cash = coins
@@ -953,9 +1003,11 @@ func new_game() -> void:
 	device_positions = Layout.DEFAULT_DEVICES.duplicate(true)
 	expansion_cells.clear()
 	equipment_level = 0
+	staff_roster = _initial_staff_roster()
 	employee_hired_count = initial_employee_count
 	employee_attending_count = 0
 	scheduled_employee_count = -1
+	scheduled_staff_roster.clear()
 	_update_staff_counts()
 	wage_reserved = 0
 	day_opening_cash = initial_cash
@@ -974,6 +1026,12 @@ func new_game() -> void:
 
 func reset() -> void:
 	new_game()
+
+
+func _initial_staff_roster() -> Array[String]:
+	var result: Array[String] = []
+	for i in range(initial_employee_count): result.append(STAFF_PROFILE_IDS[i])
+	return result
 
 
 func spend(kind: String, amount: int, reference: String) -> bool:

@@ -71,7 +71,7 @@ func _run() -> void:
 	model.new_game()
 	check(model.phase == "preopen" and model.day_number == 1 and model.coins == 60 and model.day_reports.is_empty() and model.ledger.is_empty(), "new game clears all cross-day progress")
 	var game = Restaurant.instantiate()
-	game.model = Day.new(0, 60)
+	game.model = Day.new(1, 60)
 	root.add_child(game)
 	await process_frame
 	check(game.preopen_panel.visible and game.player.locked and not game.try_interact("stove"), "scene presents preparation and blocks work")
