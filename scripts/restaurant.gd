@@ -14,11 +14,10 @@ const Layout = preload("res://scripts/layout_rules.gd")
 const DISH_SHEET = preload("res://assets/recipes/dishes.png")
 const STAFF_SHEET = preload("res://assets/characters/chef.png")
 const WOOD_BOARD = preload("res://assets/ui/wood_board.png")
-const WALL_RECORD = preload("res://assets/ui/wall_record.png")
 const INTERACT_DISTANCE := 55.0
 const DESK_DISTANCE := 95.0
-const MENU_DESK := Vector2(108, 320)
-const STAFF_DESK := Vector2(224, 320)
+const MENU_DESK := Vector2(230, 328)
+const STAFF_DESK := Vector2(272, 328)
 const CREAM := Color("f4e5cd")
 const MUTED := Color("bea993")
 const GOLD := Color("edbc72")
@@ -338,7 +337,7 @@ func _build_room() -> void:
 	_sync_layout_nodes()
 	for i in range(Model.MAX_EMPLOYEES):
 		var worker = EmployeeScene.instantiate()
-		var home := Vector2(375 + i * 30, 570)
+		var home: Vector2 = Layout.WORKER_HOMES[i]
 		worker.position = home
 		worker.configure(model, stations, Model.WORKER_IDS[i], home)
 		actors.add_child(worker)
@@ -509,8 +508,8 @@ func _build_ui() -> void:
 	pause_input.toggle_requested.connect(_toggle_pause)
 	pause_input.employee_menu_requested.connect(_request_management)
 	layer.add_child(pause_input)
-	menu_access_button = _wall_record_button("菜谱\n记录", Rect2(48, 207, 112, 64), _request_store)
-	staff_access_button = _wall_record_button("雇佣\n记录", Rect2(164, 207, 112, 64), _request_management)
+	menu_access_button = _wall_record_button("查看菜谱", Rect2(130, 205, 92, 68), _request_store)
+	staff_access_button = _wall_record_button("查看雇佣信息", Rect2(232, 205, 68, 68), _request_management)
 	var coin_board := TextureRect.new()
 	coin_board.texture = WOOD_BOARD
 	coin_board.position = Vector2(1028, 18)
@@ -1524,16 +1523,10 @@ func _make_button(parent: Node, value: String, rect: Rect2, callback: Callable) 
 
 
 func _wall_record_button(value: String, rect: Rect2, callback: Callable) -> Button:
-	var button := _make_button(actors, value, rect, callback)
+	var button := _make_button(actors, "", rect, callback)
 	button.z_index = 20
-	button.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	button.add_theme_font_override("font", font)
-	button.add_theme_font_size_override("font_size", 17)
-	button.add_theme_color_override("font_color", CREAM)
-	button.add_theme_color_override("font_hover_color", GOLD)
-	button.add_theme_color_override("font_disabled_color", MUTED)
+	button.tooltip_text = value
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
-		var style := StyleBoxTexture.new()
-		style.texture = WALL_RECORD
-		button.add_theme_stylebox_override(state, style)
+		button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 	return button

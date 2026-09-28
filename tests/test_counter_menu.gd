@@ -22,7 +22,7 @@ func _run() -> void:
 	await process_frame
 	check(game.model.coins == 1000 and game.model.employee_hired_count == 3 and game.model.wage_reserved == 54, "new game begins with 1000 coins and three hired workers")
 	check(game.labels.coins.get_parent() is TextureRect and game.order_list_scroll is ScrollContainer and game.order_cards.size() == 4, "pixel coin sign and scrollable table list replace the top status bar")
-	check(not game.get_node("Boundaries").has_node("Register") and game.menu_access_button.get_parent() == game.actors, "old register is removed and the recipe record hangs in the world")
+	check(game.get_node("World/CashCounter/Sprite2D").texture != null and game.menu_access_button.get_parent() == game.actors and game.menu_access_button.text == "", "new cashier counter appears while wall records use transparent hit areas")
 	game._toggle_preopen()
 	check(not game.player.locked and not game.preopen_panel.visible, "preopening player can walk through restaurant")
 	game._request_store()
@@ -47,6 +47,7 @@ func _run() -> void:
 	game.store_labels.buy_egg.pressed.emit()
 	check(game.model.inventory.egg == 5 and game.model.coins == 979, "single-ingredient purchase remains available in detail")
 	game._toggle_store()
+	game.player.global_position = Vector2(500, 520)
 	game._request_management()
 	check(not game.management_panel.visible, "staff settings require approaching the hiring counter")
 	game.player.global_position = game.STAFF_DESK

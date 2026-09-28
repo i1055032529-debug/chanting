@@ -2,16 +2,18 @@ class_name LayoutRules
 extends RefCounted
 ## Placement uses the same furniture footprints as the scene, plus walking clearance.
 
-const TABLE_ROOM := Rect2(305, 420, 825, 210)
-const DEVICE_ROOM := Rect2(305, 365, 825, 265)
+const TABLE_ROOM := Rect2(305, 420, 825, 450)
+const DEVICE_ROOM := Rect2(305, 365, 825, 505)
 const ROOM_ORIGIN := Vector2(40, 285)
 const ROOM_CELL := 80.0
 const INITIAL_COLUMNS := 15
-const ROOM_ROWS := 5
+const ROOM_ROWS := 8
 const GRID_ORIGIN := Vector2(320, 300)
 const CELL := 10.0
 const DOOR_CLEAR := Rect2(335, 300, 110, 105)
-const SPAWN_POINTS := [Vector2(500, 520), Vector2(375, 570), Vector2(405, 570), Vector2(435, 570)]
+const CASH_COUNTER := Rect2(66, 375, 176, 100)
+const WORKER_HOMES := [Vector2(375, 570), Vector2(405, 570), Vector2(435, 570), Vector2(375, 650), Vector2(405, 650)]
+const SPAWN_POINTS := [Vector2(500, 520), Vector2(375, 570), Vector2(405, 570), Vector2(435, 570), Vector2(375, 650), Vector2(405, 650)]
 const DEVICE_IDS := ["stove", "stove_2", "pass", "sink"]
 const DEFAULT_DEVICES := {"stove": Vector2(635, 384), "stove_2": Vector2(765, 384), "pass": Vector2(900, 384), "sink": Vector2(1100, 384)}
 
@@ -72,7 +74,7 @@ static func grid_size(expansion_cells: Array[Vector2i]) -> Vector2i:
 
 static func valid(positions: Array[Vector2], devices: Dictionary = DEFAULT_DEVICES, expansion_cells: Array[Vector2i] = []) -> bool:
 	if positions.is_empty() or devices.size() != DEVICE_IDS.size(): return false
-	var obstacles: Array[Rect2] = []
+	var obstacles: Array[Rect2] = [CASH_COUNTER]
 	for center in positions:
 		if not TABLE_ROOM.has_point(center) and not _expanded_center(center, expansion_cells): return false
 		for footprint in table_footprints(center):
@@ -113,7 +115,7 @@ static func valid(positions: Array[Vector2], devices: Dictionary = DEFAULT_DEVIC
 
 
 static func customer_route(positions: Array[Vector2], destination: Vector2, devices: Dictionary = DEFAULT_DEVICES, expansion_cells: Array[Vector2i] = []) -> Array[Vector2]:
-	var obstacles: Array[Rect2] = []
+	var obstacles: Array[Rect2] = [CASH_COUNTER]
 	for center in positions:
 		obstacles.append_array(table_footprints(center))
 	for id in DEVICE_IDS:

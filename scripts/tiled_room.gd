@@ -47,12 +47,8 @@ func _rebuild() -> void:
 			outline.width = 3.0
 			outline.default_color = Color("edbc72")
 			add_child(outline)
-	# Retain the doorway and long wall; replace the old counter corner with wall and floor tiles.
-	for x in [32, 112, 192]: _sprite(WALL, Vector2(x, 170))
-	var wall_end := _sprite(WALL, Vector2(272, 170))
-	wall_end.region_enabled = true
-	wall_end.region_rect = Rect2(0, 0, 35, 130)
-	_region(Rect2(275, 0, 941, 130), Vector2(307, 170))
+	# The supplied wall art already has a menu board and framed record; keep it visible.
+	_region(Rect2(0, 0, 1216, 130), Vector2(32, 170))
 	for cell in owned:
 		if cell.y == 0 and cell.x >= Layout.INITIAL_COLUMNS:
 			_sprite(WALL, Vector2(origin.x + cell.x * size, 170))

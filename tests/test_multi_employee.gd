@@ -1,6 +1,7 @@
 extends SceneTree
 const Day = preload("res://scripts/day_model.gd")
 const Restaurant = preload("res://scenes/restaurant.tscn")
+const Layout = preload("res://scripts/layout_rules.gd")
 const RESULT := {"success": true, "doneness": 98.0, "burn": 0.0, "score": 90, "grade": "出色"}
 var checks := 0
 var failures := 0
@@ -127,6 +128,13 @@ func _run() -> void:
 		completed.append(total)
 	check(game.model.ended and completed.slice(0, 3).min() > 0, "all three hired workers complete real service tasks in one营业日")
 	check(game.model.task_owners.is_empty() and game.model.summary().expenses.wages == 54, "parallel service closes without held tasks and pays three wages")
+	var full = Restaurant.instantiate()
+	full.model = Day.new(5, 1000)
+	root.add_child(full)
+	await process_frame
+	check(Layout.valid(full.model.table_positions, full.model.device_positions, full.model.expansion_cells) and full.employees[4].position == Layout.WORKER_HOMES[4], "five worker homes remain clear of the furniture")
+	check(full.start_day() and full.employees.all(func(worker: Node2D): return worker.visible), "all five hired workers can attend together")
+	full.queue_free()
 	print("MULTI EMPLOYEE: %d checks, %d failures." % [checks, failures])
 	game.queue_free()
 	await process_frame

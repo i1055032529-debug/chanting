@@ -24,13 +24,13 @@ func center_of(cell: Vector2i) -> Vector2:
 func _run() -> void:
 	var model = Day.new(0, 60)
 	model.coins = 1000
-	check(model.can_expand(Vector2i(15, 2)) and model.can_expand(Vector2i(10, 5)), "right and bottom neighbors are available from the starting floor")
+	check(model.can_expand(Vector2i(15, 2)) and model.can_expand(Vector2i(10, 8)) and not model.can_expand(Vector2i(10, 5)), "the starting floor includes three additional rows and expands beyond them")
 	check(not model.can_expand(Vector2i(-1, 2)) and not model.can_expand(Vector2i(2, -1)) and not model.can_expand(Vector2i(30, 2)), "left and top boundaries hold and distant ground is unavailable")
-	check(Layout.frontier(model.expansion_cells).has(Vector2i(15, 2)) and Layout.frontier(model.expansion_cells).has(Vector2i(10, 5)), "the world highlights only one-step neighbors")
+	check(Layout.frontier(model.expansion_cells).has(Vector2i(15, 2)) and Layout.frontier(model.expansion_cells).has(Vector2i(10, 8)), "the world highlights only one-step neighbors")
 	var right_cells: Array[Vector2i] = [Vector2i(15, 2), Vector2i(16, 2), Vector2i(17, 2), Vector2i(15, 3), Vector2i(16, 3), Vector2i(17, 3)]
 	for cell in right_cells: check(model.buy_expansion(cell), "connected right cell %s can be purchased" % cell)
 	for column in range(18, 26): check(model.buy_expansion(Vector2i(column, 2)), "rightward expansion continues beyond the former reserved lot")
-	var down_cells: Array[Vector2i] = [Vector2i(10, 5), Vector2i(11, 5), Vector2i(12, 5), Vector2i(10, 6), Vector2i(11, 6), Vector2i(12, 6)]
+	var down_cells: Array[Vector2i] = [Vector2i(10, 8), Vector2i(11, 8), Vector2i(12, 8), Vector2i(10, 9), Vector2i(11, 9), Vector2i(12, 9)]
 	for cell in down_cells: check(model.buy_expansion(cell), "connected bottom cell %s can be purchased" % cell)
 	var bought_count := right_cells.size() + 8 + down_cells.size()
 	check(model.expansion_cells.size() == bought_count and model.summary().expenses.expansion == bought_count * Day.EXPANSION_PRICE, "every purchased cell is billed once")
@@ -44,9 +44,9 @@ func _run() -> void:
 	check(model.move_device("sink", Vector2(1320, 490)) and model.move_device("sink", Layout.DEFAULT_DEVICES.sink), "equipment can move into and out of added floor")
 	check(model.buy_table(Vector2(1340, 500)), "table can be purchased on new right-side floor")
 	var down_tables: Array[Vector2] = model.table_positions.duplicate()
-	down_tables.append(Vector2(920, 740))
+	down_tables.append(Vector2(920, 975))
 	check(Layout.valid(down_tables, model.device_positions, model.expansion_cells), "bottom expansion accepts a reachable table")
-	check(not Layout.customer_route(down_tables, Vector2(1020, 765), model.device_positions, model.expansion_cells).is_empty(), "customer route extends downward")
+	check(not Layout.customer_route(down_tables, Vector2(1020, 1000), model.device_positions, model.expansion_cells).is_empty(), "customer route extends downward")
 	check(model.start_day() and not model.can_expand(Vector2i(26, 2)), "expansion is unavailable during service")
 	model.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(model.next_day() and model.expansion_cells.size() == bought_count, "purchased floor survives the next day")

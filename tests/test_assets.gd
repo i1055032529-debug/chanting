@@ -16,7 +16,7 @@ func check(condition: bool, message: String) -> void:
 
 
 func _run() -> void:
-	var paths := ["backgrounds/restaurant.webp", "backgrounds/tiles/floor.png", "backgrounds/tiles/wall.png", "backgrounds/tiles/border.png", "characters/chef.png", "characters/customer.png", "furniture/stove.png", "furniture/serving_counter.png", "furniture/sink.png", "furniture/table.png", "furniture/chair.png", "items/meal.png"]
+	var paths := ["backgrounds/restaurant.webp", "backgrounds/tiles/floor.png", "backgrounds/tiles/wall.png", "backgrounds/tiles/border.png", "characters/chef.png", "characters/customer.png", "furniture/stove.png", "furniture/serving_counter.png", "furniture/cash_register_counter.png", "furniture/sink.png", "furniture/table.png", "furniture/chair.png", "items/meal.png"]
 	var total := 0
 	for relative: String in paths:
 		var path := "res://assets/" + relative
@@ -38,7 +38,8 @@ func _run() -> void:
 		else:
 			check(image.detect_alpha() != Image.ALPHA_NONE, "sprite retains alpha: " + relative)
 			check(image.get_pixel(0, 0).a < 0.01, "sprite corner is transparent: " + relative)
-	for relative in ["ui/wood_board.png", "ui/wall_record.png"]:
+	check(FileAccess.get_file_as_bytes("res://assets/furniture/cash_register_counter.png").size() < 30000, "cash counter sprite stays below 30 KB")
+	for relative in ["ui/wood_board.png"]:
 		var path: String = "res://assets/" + relative
 		check(FileAccess.file_exists(path) and FileAccess.get_file_as_bytes(path).size() < 400000, "pixel sign fits the image budget: " + relative)
 		check(load(path) is Texture2D, "Godot imports pixel sign: " + relative)
