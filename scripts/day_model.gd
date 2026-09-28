@@ -66,6 +66,7 @@ var employee_hired := false
 var employee_attending := false
 var employee_hired_count := 0
 var employee_attending_count := 0
+var scheduled_employee_count := -1
 var wage_reserved := 0
 var inventory: Dictionary = {}
 var reserved_inventory: Dictionary = {}
@@ -132,7 +133,7 @@ func ingredient_available(id: String) -> int:
 
 
 func spendable_cash() -> int:
-	return maxi(0, coins - wage_reserved) if phase == "preopen" else coins
+	return maxi(0, coins - wage_reserved) if phase in ["preopen", "open"] else coins
 
 
 func table_count() -> int:
@@ -226,6 +227,37 @@ func hire_employee() -> bool:
 	return true
 
 
+func planned_employee_count() -> int:
+	return scheduled_employee_count if scheduled_employee_count >= 0 else employee_hired_count
+
+
+func schedule_employee_count(count: int) -> bool:
+	if phase not in ["preopen", "open"] or count < 0 or count > MAX_EMPLOYEES or count == planned_employee_count(): return false
+	scheduled_employee_count = count
+	feedback.emit("已预约次日雇佣 %d 人；今日员工与工资不变。" % count)
+	changed.emit()
+	return true
+
+
+func purchase_recipe_portions(recipe_id: String, target_portions: int) -> bool:
+	if phase not in ["preopen", "open"] or not RECIPES.has(recipe_id) or target_portions < 1 or target_portions > 20: return false
+	var deficits := {}
+	var total := 0
+	for ingredient: String in RECIPES[recipe_id].ingredients:
+		var required: int = int(RECIPES[recipe_id].ingredients[ingredient]) * target_portions
+		var quantity := maxi(0, required - ingredient_available(ingredient))
+		if quantity > 0:
+			deficits[ingredient] = quantity
+			total += quantity * int(INGREDIENTS[ingredient].price)
+	if total == 0: return _reject("现有食材已可制作 %d 份。" % target_portions)
+	if not spend("purchase", total, "purchase:%d" % purchase_sequence): return _reject("采购失败：可用金币不足。")
+	purchase_sequence += 1
+	for ingredient: String in deficits: inventory[ingredient] += deficits[ingredient]
+	feedback.emit("已补足%s到可做 %d 份，支出 %d 金币。" % [recipe_name(recipe_id), target_portions, total])
+	changed.emit()
+	return true
+
+
 func dismiss_employee() -> bool:
 	if phase != "preopen" or employee_hired_count <= 0: return false
 	employee_hired_count -= 1
@@ -271,7 +303,7 @@ func portions_available(recipe_id: String) -> int:
 
 
 func purchase(ingredient_id: String, quantity: int) -> bool:
-	if phase != "preopen" or not INGREDIENTS.has(ingredient_id) or quantity <= 0 or quantity > 99: return false
+	if phase not in ["preopen", "open"] or not INGREDIENTS.has(ingredient_id) or quantity <= 0 or quantity > 99: return false
 	var cost: int = INGREDIENTS[ingredient_id].price * quantity
 	if not spend("purchase", cost, "purchase:%d" % purchase_sequence):
 		return _reject("采购失败：余额不足。")
@@ -890,6 +922,10 @@ func start_day() -> bool:
 
 func next_day() -> bool:
 	if phase != "summary" or not ended: return false
+	if scheduled_employee_count >= 0:
+		employee_hired_count = scheduled_employee_count
+		scheduled_employee_count = -1
+		_update_staff_counts()
 	day_number += 1
 	day_opening_cash = coins
 	ledger.clear()
@@ -910,6 +946,7 @@ func new_game() -> void:
 	equipment_level = 0
 	employee_hired_count = 0
 	employee_attending_count = 0
+	scheduled_employee_count = -1
 	_update_staff_counts()
 	wage_reserved = 0
 	day_opening_cash = STARTING_CASH
@@ -930,8 +967,9 @@ func reset() -> void:
 
 
 func spend(kind: String, amount: int, reference: String) -> bool:
-	if kind not in EXPENSE_KINDS or kind == "wages" or amount <= 0 or phase not in ["preopen", "summary"]: return false
-	if phase == "preopen" and coins - amount < wage_reserved: return false
+	if kind not in EXPENSE_KINDS or kind == "wages" or amount <= 0: return false
+	if phase not in ["preopen", "summary"] and not (phase == "open" and kind == "purchase"): return false
+	if phase in ["preopen", "open"] and coins - amount < wage_reserved: return false
 	return _post_transaction(kind, -amount, reference)
 
 

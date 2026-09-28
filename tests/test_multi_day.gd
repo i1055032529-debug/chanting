@@ -31,7 +31,7 @@ func _run() -> void:
 	check(model.elapsed == 0.0 and not model.request_customer(), "preparation does not advance clock or accept customers")
 	check(not model.spend("purchase", Day.STARTING_CASH + 1, "before-income"), "spending cannot overdraw cash")
 	check(model.start_day() and not model.start_day(), "day can open only once")
-	check(not model.spend("purchase", 1, "during-open"), "management spending is closed during service")
+	check(not model.spend("equipment", 1, "during-open"), "equipment spending is closed during service")
 	var first_id := _serve_one(model)
 	var first_income: int = model.coins - Day.STARTING_CASH
 	var first_closing_cash: int = model.coins

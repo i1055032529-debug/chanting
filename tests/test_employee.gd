@@ -19,6 +19,7 @@ func _run() -> void:
 	await process_frame
 	game.model.set_employee_hired(true)
 	game.start_day()
+	game.player.global_position = game.STAFF_DESK
 	game.employee._physics_process(0.0)
 	check(game.employee != null and game.employee.grid != null, "employee and obstacle grid exist")
 	var menu_key := InputEventKey.new()
