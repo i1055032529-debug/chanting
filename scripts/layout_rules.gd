@@ -10,7 +10,6 @@ const INITIAL_COLUMNS := 15
 const ROOM_ROWS := 5
 const GRID_ORIGIN := Vector2(320, 300)
 const CELL := 10.0
-const REGISTER := Rect2(50, 293, 242, 120)
 const DOOR_CLEAR := Rect2(335, 300, 110, 105)
 const SPAWN_POINTS := [Vector2(500, 520), Vector2(375, 570), Vector2(405, 570), Vector2(435, 570)]
 const DEVICE_IDS := ["stove", "stove_2", "pass", "sink"]
@@ -73,7 +72,7 @@ static func grid_size(expansion_cells: Array[Vector2i]) -> Vector2i:
 
 static func valid(positions: Array[Vector2], devices: Dictionary = DEFAULT_DEVICES, expansion_cells: Array[Vector2i] = []) -> bool:
 	if positions.is_empty() or devices.size() != DEVICE_IDS.size(): return false
-	var obstacles: Array[Rect2] = [REGISTER]
+	var obstacles: Array[Rect2] = []
 	for center in positions:
 		if not TABLE_ROOM.has_point(center) and not _expanded_center(center, expansion_cells): return false
 		for footprint in table_footprints(center):
@@ -114,7 +113,7 @@ static func valid(positions: Array[Vector2], devices: Dictionary = DEFAULT_DEVIC
 
 
 static func customer_route(positions: Array[Vector2], destination: Vector2, devices: Dictionary = DEFAULT_DEVICES, expansion_cells: Array[Vector2i] = []) -> Array[Vector2]:
-	var obstacles: Array[Rect2] = [REGISTER]
+	var obstacles: Array[Rect2] = []
 	for center in positions:
 		obstacles.append_array(table_footprints(center))
 	for id in DEVICE_IDS:

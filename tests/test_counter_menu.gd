@@ -21,6 +21,8 @@ func _run() -> void:
 	root.add_child(game)
 	await process_frame
 	check(game.model.coins == 1000 and game.model.employee_hired_count == 3 and game.model.wage_reserved == 54, "new game begins with 1000 coins and three hired workers")
+	check(game.labels.coins.get_parent() is TextureRect and game.order_list_scroll is ScrollContainer and game.order_cards.size() == 4, "pixel coin sign and scrollable table list replace the top status bar")
+	check(not game.get_node("Boundaries").has_node("Register") and game.menu_access_button.get_parent() == game.actors, "old register is removed and the recipe record hangs in the world")
 	game._toggle_preopen()
 	check(not game.player.locked and not game.preopen_panel.visible, "preopening player can walk through restaurant")
 	game._request_store()
@@ -28,7 +30,7 @@ func _run() -> void:
 	game.player.global_position = game.MENU_DESK
 	game._process(0.0)
 	check(not game.menu_access_button.disabled, "recipe button becomes available at menu counter")
-	game._request_store()
+	game.menu_access_button.pressed.emit()
 	check(game.store_panel.visible and game.store_grid.visible and game.store_labels.has("card_rice") and game.store_labels.has("card_egg_noodles"), "recipe index has four illustrated dishes")
 	check(game.store_grid is ScrollContainer and game.store_cards.columns == 6, "recipe list scrolls vertically with six cards per row")
 	var first_card: Button = game.store_cards.get_child(0)
@@ -49,7 +51,7 @@ func _run() -> void:
 	check(not game.management_panel.visible, "staff settings require approaching the hiring counter")
 	game.player.global_position = game.STAFF_DESK
 	game._process(0.0)
-	game._request_management()
+	game.staff_access_button.pressed.emit()
 	check(game.management_list_page.visible and game.staff_list_scroll is ScrollContainer and game.staff_list_items.get_child_count() == 3, "staff page lists three scrollable employee cards")
 	game.staff_list_items.get_node("lan").get_child(1).pressed.emit()
 	check(game.management_panel.visible and game.model.employee_hired_count == 3 and game.model.planned_employee_count() == 2, "staff window queues two workers for tomorrow")

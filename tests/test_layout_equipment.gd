@@ -143,8 +143,7 @@ func _run() -> void:
 	paged._confirm_layout_preview()
 	check(paged.model.table_count() == 6 and paged.table_nodes.size() == 6 and paged.stations.has("table_6") and paged.model.summary().expenses.furniture == Day.TABLE_PRICE * 2, "repeated purchases create and bill independent tables")
 	check(paged.layout_labels.buy.text.contains("第 7 张桌"), "layout menu continues offering the next table")
-	paged._change_order_page(1)
-	check(paged.order_page == 1 and paged.order_cards[0].visible and paged.order_cards[0].text.contains("06 号桌") and paged.order_page_label.visible, "order cards paginate beyond the fifth table")
+	check(paged.order_list_scroll is ScrollContainer and paged.order_cards.size() == 6 and paged.order_cards[5].text.contains("06 号桌"), "right-side scroll list includes the sixth table")
 	paged.queue_free()
 	await process_frame
 	var wandering = Restaurant.instantiate()

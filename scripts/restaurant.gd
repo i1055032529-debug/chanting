@@ -13,11 +13,12 @@ const EmployeeScene = preload("res://scenes/actors/employee.tscn")
 const Layout = preload("res://scripts/layout_rules.gd")
 const DISH_SHEET = preload("res://assets/recipes/dishes.png")
 const STAFF_SHEET = preload("res://assets/characters/chef.png")
+const WOOD_BOARD = preload("res://assets/ui/wood_board.png")
+const WALL_RECORD = preload("res://assets/ui/wall_record.png")
 const INTERACT_DISTANCE := 55.0
 const DESK_DISTANCE := 95.0
-const MENU_DESK := Vector2(350, 435)
-const STAFF_DESK := Vector2(350, 555)
-const ORDER_CARDS_PER_PAGE := 5
+const MENU_DESK := Vector2(108, 320)
+const STAFF_DESK := Vector2(224, 320)
 const CREAM := Color("f4e5cd")
 const MUTED := Color("bea993")
 const GOLD := Color("edbc72")
@@ -40,10 +41,8 @@ var font: SystemFont
 var ui: Control
 var labels: Dictionary = {}
 var order_cards: Array[Label] = []
-var order_page := 0
-var order_page_label: Label
-var order_previous_button: Button
-var order_next_button: Button
+var order_list_scroll: ScrollContainer
+var order_list_items: VBoxContainer
 var prompt: Label
 var pause_panel: Panel
 var preopen_panel: Panel
@@ -145,7 +144,7 @@ func _process(delta: float) -> void:
 	_refresh_ui()
 	_refresh_employee_panel()
 	nearest = closest_target() if model.phase == "open" else ""
-	prompt.text = "[ E ] %s · %s" % [stations[nearest].display_name, _action_hint(nearest)] if nearest != "" else ("走到左侧柜台查看菜谱或雇佣；准备好后点击开店准备。" if model.phase == "preopen" else "查看今日结算，准备下一天。" if model.phase == "summary" else "靠近工作台、餐桌或污渍按 E 交互；Q 切换待做订单")
+	prompt.text = "[ E ] %s · %s" % [stations[nearest].display_name, _action_hint(nearest)] if nearest != "" else ("走到左上角，点击墙上的菜谱或雇佣记录；准备好后开店。" if model.phase == "preopen" else "查看今日结算，准备下一天。" if model.phase == "summary" else "点击左上角墙面记录；靠近工作台、餐桌或污渍按 E 交互，Q 切换订单。")
 	labels.toast.text = toast if toast_time > 0.0 else _next_step()
 	for id: String in stations:
 		stations[id].set_highlight(id == nearest)
@@ -201,8 +200,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("select_order") and not event.is_echo() and model.phase == "open":
 		var id := model.select_next()
 		if id != 0:
-			order_page = floori(float(model.orders[id].table) / ORDER_CARDS_PER_PAGE)
-			_layout_order_cards()
+			var table_index: int = model.orders[id].table
+			if table_index < order_card_panels.size(): order_list_scroll.ensure_control_visible(order_card_panels[table_index])
 			_refresh_ui()
 		_show_feedback("已选中订单 #%d，%02d 号桌。" % [id, model.orders[id].table + 1] if id != 0 else "当前没有待做订单。")
 		get_viewport().set_input_as_handled()
@@ -345,14 +344,6 @@ func _build_room() -> void:
 		actors.add_child(worker)
 		employees.append(worker)
 	employee = employees[0]
-	for entry in [{"text": "菜谱", "position": MENU_DESK}, {"text": "雇佣", "position": STAFF_DESK}]:
-		var sign := Label.new()
-		sign.text = "[ %s台 ]" % entry.text
-		sign.position = entry.position + Vector2(-38, -31)
-		sign.add_theme_color_override("font_color", GOLD)
-		sign.add_theme_font_size_override("font_size", 15)
-		sign.z_index = 2
-		actors.add_child(sign)
 
 
 func _sync_layout_nodes() -> void:
@@ -387,32 +378,31 @@ func _sync_layout_nodes() -> void:
 
 
 func _layout_order_cards() -> void:
-	if order_card_panels.is_empty(): return
-	var count := model.table_count()
-	var page_count := maxi(1, ceili(float(count) / ORDER_CARDS_PER_PAGE))
-	order_page = clampi(order_page, 0, page_count - 1)
-	var has_pages := page_count > 1
-	order_page_label.text = "订单 %d/%d 页" % [order_page + 1, page_count]
-	order_page_label.visible = has_pages
-	order_previous_button.visible = has_pages
-	order_next_button.visible = has_pages
-	order_previous_button.disabled = order_page == 0
-	order_next_button.disabled = order_page == page_count - 1
-	for i in range(order_card_panels.size()):
-		var visible_card := order_page * ORDER_CARDS_PER_PAGE + i < count
-		order_card_panels[i].visible = visible_card
-		order_cards[i].visible = visible_card
-		if visible_card:
-			order_card_panels[i].position.x = 40 + i * 240
-			order_card_panels[i].size.x = 232
-			order_cards[i].position.x = order_card_panels[i].position.x + 13
-			order_cards[i].size.x = 208
-
-
-func _change_order_page(delta: int) -> void:
-	order_page += delta
-	_layout_order_cards()
-	_refresh_ui()
+	if order_list_items == null: return
+	while order_cards.size() < model.table_count():
+		var card := Panel.new()
+		card.custom_minimum_size = Vector2(224, 80)
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		order_list_items.add_child(card)
+		var board := TextureRect.new()
+		board.texture = WOOD_BOARD
+		board.position = Vector2.ZERO
+		board.size = Vector2(224, 80)
+		board.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		board.stretch_mode = TextureRect.STRETCH_SCALE
+		board.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(board)
+		var label := _child_label(card, "", Vector2(13, 11), Vector2(197, 61), 14, CREAM)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		order_card_panels.append(card)
+		order_cards.append(label)
+	while order_cards.size() > model.table_count():
+		order_cards.pop_back()
+		var old_card: Panel = order_card_panels.pop_back()
+		order_list_items.remove_child(old_card)
+		old_card.queue_free()
 
 
 func _spawn_customer(id: int, table_id: int) -> void:
@@ -519,32 +509,34 @@ func _build_ui() -> void:
 	pause_input.toggle_requested.connect(_toggle_pause)
 	pause_input.employee_menu_requested.connect(_request_management)
 	layer.add_child(pause_input)
-	_panel(Rect2(0, 0, 1280, 166), Color("2d2119"))
-	_label("title", "一人食堂 · 营业日", Vector2(28, 15), Vector2(280, 43), 27, CREAM)
-	_label("coins", "0 金币", Vector2(310, 22), Vector2(160, 37), 23, GOLD)
-	_label("served", "接待 0", Vector2(495, 28), Vector2(130, 29), 18, CREAM)
-	_label("lost", "流失 0", Vector2(630, 28), Vector2(130, 29), 18, RED)
-	_label("time", "营业 03:00", Vector2(780, 22), Vector2(220, 37), 23, GOLD)
-	_label("clean", "整洁 100%", Vector2(1040, 28), Vector2(210, 30), 18, GREEN)
-	_label("employee", "员工：待命", Vector2(29, 58), Vector2(415, 25), 14, GREEN)
-	_label("capacity", "", Vector2(452, 58), Vector2(575, 25), 14, CREAM)
-	menu_access_button = _make_button(ui, "菜谱", Rect2(1038, 54, 100, 29), _request_store)
-	staff_access_button = _make_button(ui, "雇佣", Rect2(1144, 54, 107, 29), _request_management)
-	preopen_access_button = _make_button(ui, "开店准备", Rect2(920, 54, 108, 29), _toggle_preopen)
-	order_page_label = _label("order_page", "", Vector2(1090, 152), Vector2(135, 17), 12, MUTED)
-	order_previous_button = _make_button(ui, "‹", Rect2(4, 102, 31, 32), func(): _change_order_page(-1))
-	order_next_button = _make_button(ui, "›", Rect2(1245, 102, 31, 32), func(): _change_order_page(1))
-	for i in range(ORDER_CARDS_PER_PAGE):
-		var x := 40 + i * 240
-		order_card_panels.append(_panel(Rect2(x, 86, 232, 66), Color("493321")))
-		var card := _label("card%d" % i, "%02d 号桌  ·  空闲" % (i + 1), Vector2(x + 13, 92), Vector2(208, 57), 15, CREAM)
-		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		order_cards.append(card)
+	menu_access_button = _wall_record_button("菜谱\n记录", Rect2(48, 207, 112, 64), _request_store)
+	staff_access_button = _wall_record_button("雇佣\n记录", Rect2(164, 207, 112, 64), _request_management)
+	var coin_board := TextureRect.new()
+	coin_board.texture = WOOD_BOARD
+	coin_board.position = Vector2(1028, 18)
+	coin_board.size = Vector2(224, 72)
+	coin_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coin_board.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	ui.add_child(coin_board)
+	labels.coins = _child_label(coin_board, "1000 金币", Vector2(14, 16), Vector2(196, 40), 25, GOLD)
+	labels.coins.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_child_label(ui, "桌位记录", Vector2(1037, 138), Vector2(190, 30), 19, GOLD)
+	order_list_scroll = ScrollContainer.new()
+	order_list_scroll.position = Vector2(1018, 174)
+	order_list_scroll.size = Vector2(246, 523)
+	order_list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	ui.add_child(order_list_scroll)
+	order_list_items = VBoxContainer.new()
+	order_list_items.custom_minimum_size.x = 224
+	order_list_items.add_theme_constant_override("separation", 6)
+	order_list_scroll.add_child(order_list_items)
 	_layout_order_cards()
-	_panel(Rect2(0, 701, 1280, 99), Color("2d2119"))
-	_label("toast", toast, Vector2(32, 710), Vector2(1210, 28), 16, CREAM)
-	prompt = _label("prompt", "", Vector2(32, 750), Vector2(810, 26), 15, GOLD)
-	_label("controls", "WASD 移动  E 交互  Q 订单  左侧靠近柜台查看菜谱/雇佣", Vector2(738, 752), Vector2(520, 28), 14, MUTED)
+	_panel(Rect2(0, 700, 1280, 100), Color("2d2119"))
+	labels.capacity = _child_label(ui, "", Vector2(25, 706), Vector2(1230, 22), 13, CREAM)
+	labels.employee = _child_label(ui, "", Vector2(25, 729), Vector2(1230, 22), 13, GREEN)
+	labels.toast = _child_label(ui, toast, Vector2(25, 750), Vector2(1230, 22), 14, CREAM)
+	prompt = _child_label(ui, "", Vector2(25, 773), Vector2(1230, 22), 14, GOLD)
+	preopen_access_button = _make_button(ui, "开店准备", Rect2(880, 660, 118, 34), _toggle_preopen)
 	debug_label = _label("debug", "", Vector2(35, 370), Vector2(640, 260), 12, CREAM)
 	debug_label.visible = false
 	management_panel = _panel(Rect2(700, 167, 555, 515), Color("30291f"))
@@ -1209,14 +1201,14 @@ func _toggle_store() -> void:
 
 func _request_store() -> void:
 	if player.global_position.distance_to(MENU_DESK) > DESK_DISTANCE:
-		_show_feedback("请走到左侧菜谱台。")
+		_show_feedback("请靠近左上角墙上的菜谱记录。")
 		return
 	_toggle_store()
 
 
 func _request_management() -> void:
 	if player.global_position.distance_to(STAFF_DESK) > DESK_DISTANCE:
-		_show_feedback("请走到左侧雇佣台。")
+		_show_feedback("请靠近左上角墙上的雇佣记录。")
 		return
 	_toggle_management()
 
@@ -1275,18 +1267,9 @@ func _refresh_ui() -> void:
 	_refresh_expansion_panel()
 	if model.phase == "summary" and summary_panel != null and summary_panel.visible:
 		summary_text.text = _format_summary(model.summary())
-	labels.title.text = "一人食堂 · 第 %d 天" % model.day_number
 	labels.coins.text = "%d 金币" % model.coins
-	labels.served.text = "接待 %d" % model.served
-	labels.lost.text = "流失 %d" % model.lost
-	var remaining: int = maxi(0, ceili(Model.DAY_SECONDS - model.elapsed))
-	if model.phase == "preopen": labels.time.text = "开店准备"
-	elif model.phase == "summary": labels.time.text = "今日结算"
-	else: labels.time.text = ("收尾 %02d:%02d" % [maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) / 60, maxi(0, ceili(Model.DAY_SECONDS + Model.CLOSING_GRACE - model.elapsed)) % 60]) if model.day_closed else ("营业 %02d:%02d" % [remaining / 60, remaining % 60])
 	if preopen_text != null:
-		preopen_text.text = "第 %d 天 · 现金 %d · 工资预留 %d · 可用 %d\n今日雇员 %d 人，次日计划 %d 人。\n\n进入餐厅后，走到左侧柜台查看菜谱和雇佣设置。" % [model.day_number, model.coins, model.wage_reserved, model.spendable_cash(), model.employee_hired_count, model.planned_employee_count()]
-	labels.clean.text = "整洁 %d%%" % [roundi((1.0 - float(model.stains.size()) / Model.STAIN_LIMIT) * 100)]
-	labels.clean.add_theme_color_override("font_color", GREEN if model.stains.size() <= 1 else RED)
+		preopen_text.text = "第 %d 天 · 现金 %d · 工资预留 %d · 可用 %d\n今日雇员 %d 人，次日计划 %d 人。\n\n进入餐厅后，靠近左上角墙面点击菜谱或雇佣记录。" % [model.day_number, model.coins, model.wage_reserved, model.spendable_cash(), model.employee_hired_count, model.planned_employee_count()]
 	if model.phase == "preopen":
 		labels.employee.text = "员工：今日 %d · 次日计划 %d" % [model.employee_hired_count, model.planned_employee_count()]
 	elif model.phase == "summary":
@@ -1303,7 +1286,7 @@ func _refresh_ui() -> void:
 		portions.append("%s %d" % [model.recipe_name(recipe_id), model.portions_available(recipe_id)])
 	labels.capacity.text = "剩余可做：" + " · ".join(portions)
 	for slot in range(order_cards.size()):
-		var i := order_page * ORDER_CARDS_PER_PAGE + slot
+		var i := slot
 		if i >= model.table_count(): continue
 		var id: int = model.tables[i]
 		var card := order_cards[slot]
@@ -1537,4 +1520,20 @@ func _make_button(parent: Node, value: String, rect: Rect2, callback: Callable) 
 	button.size = rect.size
 	button.pressed.connect(callback)
 	parent.add_child(button)
+	return button
+
+
+func _wall_record_button(value: String, rect: Rect2, callback: Callable) -> Button:
+	var button := _make_button(actors, value, rect, callback)
+	button.z_index = 20
+	button.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	button.add_theme_font_override("font", font)
+	button.add_theme_font_size_override("font_size", 17)
+	button.add_theme_color_override("font_color", CREAM)
+	button.add_theme_color_override("font_hover_color", GOLD)
+	button.add_theme_color_override("font_disabled_color", MUTED)
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var style := StyleBoxTexture.new()
+		style.texture = WALL_RECORD
+		button.add_theme_stylebox_override(state, style)
 	return button

@@ -105,7 +105,7 @@ func _run() -> void:
 	game._select_employee(-1)
 	check(game.selected_employee_index == 1 and game.management_title.text.contains("2/3"), "management can select another worker")
 	game._toggle_management()
-	check(game.start_day() and game.employees.all(func(worker: Node2D): return worker.visible), "three employees appear in the restaurant")
+	check(game.start_day() and game.employees.slice(0, 3).all(func(worker: Node2D): return worker.visible) and game.employees.slice(3).all(func(worker: Node2D): return not worker.visible), "only the three hired employees appear in the restaurant")
 	check(game.labels.employee.text.contains("3/3"), "service header shows full attendance")
 	game.model.request_customer()
 	game.model.request_customer()
@@ -125,7 +125,7 @@ func _run() -> void:
 		var total := 0
 		for count in worker.tasks_completed.values(): total += count
 		completed.append(total)
-	check(game.model.ended and completed.min() > 0, "all three hired workers complete real service tasks in one营业日")
+	check(game.model.ended and completed.slice(0, 3).min() > 0, "all three hired workers complete real service tasks in one营业日")
 	check(game.model.task_owners.is_empty() and game.model.summary().expenses.wages == 54, "parallel service closes without held tasks and pays three wages")
 	print("MULTI EMPLOYEE: %d checks, %d failures." % [checks, failures])
 	game.queue_free()

@@ -38,6 +38,10 @@ func _run() -> void:
 		else:
 			check(image.detect_alpha() != Image.ALPHA_NONE, "sprite retains alpha: " + relative)
 			check(image.get_pixel(0, 0).a < 0.01, "sprite corner is transparent: " + relative)
+	for relative in ["ui/wood_board.png", "ui/wall_record.png"]:
+		var path: String = "res://assets/" + relative
+		check(FileAccess.file_exists(path) and FileAccess.get_file_as_bytes(path).size() < 400000, "pixel sign fits the image budget: " + relative)
+		check(load(path) is Texture2D, "Godot imports pixel sign: " + relative)
 	for character: String in ["chef", "customer"]:
 		var frames := load("res://assets/characters/%s_frames.tres" % character) as SpriteFrames
 		for facing: String in ["down", "up", "left", "right"]:
