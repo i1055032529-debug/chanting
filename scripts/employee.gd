@@ -46,7 +46,7 @@ func configure(day_model: RefCounted, all_stations: Dictionary, worker_id: Strin
 
 
 func _ready() -> void:
-	avatar.sprite.modulate = [Color("8cbad6"), Color("d6a48c"), Color("a8c890")][model.WORKER_IDS.find(actor_id)]
+	avatar.sprite.modulate = [Color("8cbad6"), Color("d6a48c"), Color("a8c890"), Color("d5a6ca"), Color("c8bd85")][model.WORKER_IDS.find(actor_id)]
 	title_label.text = "员工 %d" % (model.WORKER_IDS.find(actor_id) + 1)
 
 

@@ -19,8 +19,9 @@ const PASS_CAPACITY := 2
 const EXPENSE_KINDS := ["purchase", "wages", "furniture", "equipment", "expansion"]
 const STARTING_CASH := 1000
 const DAILY_WAGE := 18
-const MAX_EMPLOYEES := 3
-const WORKER_IDS := ["employee", "employee_2", "employee_3"]
+const STARTING_EMPLOYEES := 3
+const MAX_EMPLOYEES := 5
+const WORKER_IDS := ["employee", "employee_2", "employee_3", "employee_4", "employee_5"]
 const STAFF_PROFILES := {
 	"lin": {"name": "林小禾", "bio": "动作利落，喜欢照看餐桌。", "color": Color("8cbad6")},
 	"lan": {"name": "蓝棠", "bio": "做菜专注，擅长掌握火候。", "color": Color("d6a48c")},
@@ -62,7 +63,7 @@ const EQUIPMENT_PRICE := 70
 const EQUIPMENT_SPEED_BONUS := 1.25
 
 var phase := "preopen"
-var initial_employee_count := MAX_EMPLOYEES
+var initial_employee_count := STARTING_EMPLOYEES
 var initial_cash := STARTING_CASH
 var day_number := 1
 var day_opening_cash := STARTING_CASH
@@ -75,7 +76,7 @@ var ended := false
 var coins := STARTING_CASH
 var employee_hired := true
 var employee_attending := false
-var employee_hired_count := MAX_EMPLOYEES
+var employee_hired_count := STARTING_EMPLOYEES
 var employee_attending_count := 0
 var scheduled_employee_count := -1
 var staff_roster: Array[String] = []
@@ -128,7 +129,7 @@ var employee_carried_table_id := -1
 var worker_carry: Dictionary = {}
 
 
-func _init(staff_count: int = MAX_EMPLOYEES, opening_cash: int = STARTING_CASH) -> void:
+func _init(staff_count: int = STARTING_EMPLOYEES, opening_cash: int = STARTING_CASH) -> void:
 	initial_employee_count = clampi(staff_count, 0, MAX_EMPLOYEES)
 	initial_cash = maxi(0, opening_cash)
 	staff_roster = _initial_staff_roster()

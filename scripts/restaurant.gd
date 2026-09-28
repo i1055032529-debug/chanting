@@ -564,7 +564,7 @@ func _build_ui() -> void:
 	_child_label(management_hire_page, "可雇佣员工 · 日薪均为 18 金币", Vector2(145, 8), Vector2(385, 27), 17, GOLD)
 	hire_list_scroll = _staff_scroll(management_hire_page, Vector2(20, 49), Vector2(515, 325))
 	hire_list_items = _staff_list_contents(hire_list_scroll)
-	_child_label(management_hire_page, "点击员工卡片预约雇佣；最多同时雇佣 3 人。", Vector2(20, 385), Vector2(515, 28), 14, MUTED)
+	_child_label(management_hire_page, "点击员工卡片预约雇佣；最多同时雇佣 5 人。", Vector2(20, 385), Vector2(515, 28), 14, MUTED)
 	management_detail_page = _management_page_root()
 	_make_button(management_detail_page, "← 返回列表", Rect2(20, 3, 130, 34), _show_management_list)
 	select_previous_button = _make_button(management_detail_page, "←", Rect2(439, 44, 43, 31), func(): _select_employee(-1))
