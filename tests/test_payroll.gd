@@ -15,8 +15,8 @@ func check(value: bool, message: String) -> void:
 		push_error("FAIL: " + message)
 
 func _run() -> void:
-	var model = Day.new()
-	check(not model.employee_hired and model.wage_reserved == 0 and model.spendable_cash() == Day.STARTING_CASH, "new game begins without hired staff")
+	var model = Day.new(0, 60)
+	check(not model.employee_hired and model.wage_reserved == 0 and model.spendable_cash() == 60, "new game begins without hired staff")
 	model.coins = 30
 	model.day_opening_cash = 30
 	check(model.set_employee_hired(true) and not model.set_employee_hired(true), "one employee can be hired only once")
@@ -36,7 +36,7 @@ func _run() -> void:
 	check(model.start_day() and not model.employee_attending and model.coins == 0, "unfunded worker does not attend; player can open")
 	model.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(model.summary().expenses.wages == 0, "absent employee receives no wage")
-	var poor = Day.new()
+	var poor = Day.new(0, 60)
 	poor.coins = 30
 	poor.day_opening_cash = 30
 	poor.spend("equipment", 25, "leave-five")
@@ -56,6 +56,7 @@ func _run() -> void:
 	check(poor.summary().expenses.wages == 0 and poor.coins > Day.DAILY_WAGE, "manual service earns cash without charging the absent worker")
 	check(poor.next_day() and poor.wage_reserved == Day.DAILY_WAGE and poor.start_day() and poor.employee_attending, "contracted employee returns automatically once next-day cash covers wage")
 	var game = Restaurant.instantiate()
+	game.model = Day.new(0, 60)
 	root.add_child(game)
 	await process_frame
 	check(not game.employee.visible and not game.model.employee_hired, "scene hides uncontracted employee")

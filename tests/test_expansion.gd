@@ -22,7 +22,7 @@ func center_of(cell: Vector2i) -> Vector2:
 
 
 func _run() -> void:
-	var model = Day.new()
+	var model = Day.new(0, 60)
 	model.coins = 1000
 	check(model.can_expand(Vector2i(15, 2)) and model.can_expand(Vector2i(10, 5)), "right and bottom neighbors are available from the starting floor")
 	check(not model.can_expand(Vector2i(-1, 2)) and not model.can_expand(Vector2i(2, -1)) and not model.can_expand(Vector2i(30, 2)), "left and top boundaries hold and distant ground is unavailable")
@@ -54,6 +54,7 @@ func _run() -> void:
 	check(model.expansion_cells.is_empty() and model.table_count() == 4, "new game restores the starting floor")
 
 	var game = Restaurant.instantiate()
+	game.model = Day.new(0, 60)
 	root.add_child(game)
 	await process_frame
 	game.model.coins = 200

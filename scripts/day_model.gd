@@ -17,7 +17,7 @@ const STOVES := ["stove", "stove_2"]
 const DEVICE_IDS := ["stove", "stove_2", "pass", "sink"]
 const PASS_CAPACITY := 2
 const EXPENSE_KINDS := ["purchase", "wages", "furniture", "equipment", "expansion"]
-const STARTING_CASH := 60
+const STARTING_CASH := 1000
 const DAILY_WAGE := 18
 const MAX_EMPLOYEES := 3
 const WORKER_IDS := ["employee", "employee_2", "employee_3"]
@@ -53,6 +53,8 @@ const EQUIPMENT_PRICE := 70
 const EQUIPMENT_SPEED_BONUS := 1.25
 
 var phase := "preopen"
+var initial_employee_count := MAX_EMPLOYEES
+var initial_cash := STARTING_CASH
 var day_number := 1
 var day_opening_cash := STARTING_CASH
 var ledger: Array[Dictionary] = []
@@ -62,9 +64,9 @@ var elapsed := 0.0
 var day_closed := false
 var ended := false
 var coins := STARTING_CASH
-var employee_hired := false
+var employee_hired := true
 var employee_attending := false
-var employee_hired_count := 0
+var employee_hired_count := MAX_EMPLOYEES
 var employee_attending_count := 0
 var scheduled_employee_count := -1
 var wage_reserved := 0
@@ -115,7 +117,14 @@ var employee_carried_table_id := -1
 var worker_carry: Dictionary = {}
 
 
-func _init() -> void:
+func _init(staff_count: int = MAX_EMPLOYEES, opening_cash: int = STARTING_CASH) -> void:
+	initial_employee_count = clampi(staff_count, 0, MAX_EMPLOYEES)
+	initial_cash = maxi(0, opening_cash)
+	employee_hired_count = initial_employee_count
+	coins = initial_cash
+	day_opening_cash = initial_cash
+	_update_staff_counts()
+	_refresh_wage_reservation()
 	_reset_inventory()
 
 
@@ -939,17 +948,17 @@ func next_day() -> bool:
 
 func new_game() -> void:
 	day_number = 1
-	coins = STARTING_CASH
+	coins = initial_cash
 	table_positions = STARTING_TABLE_POSITIONS.duplicate()
 	device_positions = Layout.DEFAULT_DEVICES.duplicate(true)
 	expansion_cells.clear()
 	equipment_level = 0
-	employee_hired_count = 0
+	employee_hired_count = initial_employee_count
 	employee_attending_count = 0
 	scheduled_employee_count = -1
 	_update_staff_counts()
 	wage_reserved = 0
-	day_opening_cash = STARTING_CASH
+	day_opening_cash = initial_cash
 	_reset_inventory()
 	menu_enabled = {"rice": true, "noodles": true, "tomato_egg": true, "egg_noodles": true}
 	menu_prices = {"rice": 18, "noodles": 24, "tomato_egg": 20, "egg_noodles": 22}
@@ -959,6 +968,7 @@ func new_game() -> void:
 	transaction_keys.clear()
 	_clear_day()
 	phase = "preopen"
+	_refresh_wage_reservation()
 	changed.emit()
 
 

@@ -1,5 +1,6 @@
 extends SceneTree
 const Restaurant = preload("res://scenes/restaurant.tscn")
+const Day = preload("res://scripts/day_model.gd")
 var checks := 0
 var failures := 0
 
@@ -14,6 +15,7 @@ func check(value: bool, message: String) -> void:
 
 func _run() -> void:
 	var game = Restaurant.instantiate()
+	game.model = Day.new(0, 60)
 	root.add_child(game)
 	await physics_frame
 	await process_frame

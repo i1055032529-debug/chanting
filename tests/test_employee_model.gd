@@ -19,7 +19,7 @@ func ready_order(model, id: int) -> void:
 	model.complete_cooking(id, model.orders[id].cook_attempt, RESULT)
 
 func active_day():
-	var model = Day.new()
+	var model = Day.new(0, 60)
 	model.set_employee_hired(true)
 	model.start_day()
 	return model

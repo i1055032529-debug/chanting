@@ -25,15 +25,15 @@ func _serve_one(model) -> int:
 	return id
 
 func _run() -> void:
-	var model = Day.new()
-	check(model.phase == "preopen" and model.day_number == 1 and model.coins == Day.STARTING_CASH, "new run starts before day one")
+	var model = Day.new(0, 60)
+	check(model.phase == "preopen" and model.day_number == 1 and model.coins == 60, "new run starts before day one")
 	model.advance(30.0)
 	check(model.elapsed == 0.0 and not model.request_customer(), "preparation does not advance clock or accept customers")
-	check(not model.spend("purchase", Day.STARTING_CASH + 1, "before-income"), "spending cannot overdraw cash")
+	check(not model.spend("purchase", 60 + 1, "before-income"), "spending cannot overdraw cash")
 	check(model.start_day() and not model.start_day(), "day can open only once")
 	check(not model.spend("equipment", 1, "during-open"), "equipment spending is closed during service")
 	var first_id := _serve_one(model)
-	var first_income: int = model.coins - Day.STARTING_CASH
+	var first_income: int = model.coins - 60
 	var first_closing_cash: int = model.coins
 	check(first_income > 0 and model.ledger.size() == 1 and model.ledger[0].kind == "income", "payment writes one ledger entry")
 	model.advance(0.1)
@@ -43,7 +43,7 @@ func _run() -> void:
 	model.advance(Day.DAY_SECONDS)
 	check(model.phase == "summary" and model.ended and model.day_reports.size() == 1, "first day closes with one report")
 	var first_report: Dictionary = model.day_reports[0]
-	check(first_report.day == 1 and first_report.opening_cash == Day.STARTING_CASH and first_report.income == first_income and first_report.coins == first_closing_cash, "report reconciles opening cash and revenue")
+	check(first_report.day == 1 and first_report.opening_cash == 60 and first_report.income == first_income and first_report.coins == first_closing_cash, "report reconciles opening cash and revenue")
 	model.advance(Day.CLOSING_GRACE)
 	check(model.day_reports.size() == 1 and not model.start_day(), "finished day cannot settle or reopen twice")
 	check(model.spend("equipment", 5, "upgrade-one"), "summary-phase spending uses ledger")
@@ -69,8 +69,9 @@ func _run() -> void:
 	model.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(model.day_reports.size() == 3 and model.day_reports[2].income == 0 and model.coins == second_closing_cash, "quiet third day closes once without changing cash")
 	model.new_game()
-	check(model.phase == "preopen" and model.day_number == 1 and model.coins == Day.STARTING_CASH and model.day_reports.is_empty() and model.ledger.is_empty(), "new game clears all cross-day progress")
+	check(model.phase == "preopen" and model.day_number == 1 and model.coins == 60 and model.day_reports.is_empty() and model.ledger.is_empty(), "new game clears all cross-day progress")
 	var game = Restaurant.instantiate()
+	game.model = Day.new(0, 60)
 	root.add_child(game)
 	await process_frame
 	check(game.preopen_panel.visible and game.player.locked and not game.try_interact("stove"), "scene presents preparation and blocks work")

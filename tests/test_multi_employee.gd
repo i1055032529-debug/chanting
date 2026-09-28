@@ -15,14 +15,14 @@ func check(value: bool, message: String) -> void:
 		push_error("FAIL: " + message)
 
 func _run() -> void:
-	var lean = Day.new()
+	var lean = Day.new(0, 60)
 	lean.coins = 30
 	check(lean.hire_employee() and lean.hire_employee() and lean.hire_employee() and not lean.hire_employee(), "hire up to three distinct workers")
 	check(lean.employee_hired_count == 3 and lean.wage_reserved == Day.DAILY_WAGE and lean.spendable_cash() == 12, "only affordable daily wages are reserved")
 	check(lean.start_day() and lean.employee_attending_count == 1 and lean.worker_active("employee") and not lean.worker_active("employee_2"), "partial budget brings only one worker on duty")
 	lean.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(lean.summary().expenses.wages == Day.DAILY_WAGE and lean.coins == 12, "payroll charges only workers who attended")
-	var model = Day.new()
+	var model = Day.new(0, 60)
 	model.coins = 100
 	for i in range(3): model.hire_employee()
 	check(model.wage_reserved == 54 and model.spendable_cash() == 46 and not model.spend("equipment", 47, "too-expensive"), "three wages are protected from other spending")
@@ -52,7 +52,7 @@ func _run() -> void:
 	check(model.summary().expenses.wages == 54 and model.coins >= 0, "three-worker payroll settles once without negative cash")
 	check(model.next_day() and model.employee_hired_count == 3 and model.wage_reserved <= model.coins, "employment persists and next-day reserve respects funds")
 	check(model.dismiss_employee() and model.employee_hired_count == 2, "preopening can reduce headcount")
-	var preempt = Day.new()
+	var preempt = Day.new(0, 60)
 	preempt.coins = 100
 	preempt.hire_employee()
 	preempt.hire_employee()
@@ -60,7 +60,7 @@ func _run() -> void:
 	preempt.request_customer()
 	preempt.seat_customer(1)
 	check(preempt.claim_task("cook", 1, "employee_2", "stove_2") and preempt.start_cooking("stove_2") and preempt.task_owner("cook", 1) == "player", "player can take a travelling second worker's task")
-	var stale = Day.new()
+	var stale = Day.new(0, 60)
 	stale.coins = 100
 	stale.hire_employee()
 	stale.hire_employee()
@@ -81,6 +81,7 @@ func _run() -> void:
 	check(stale.worker_carrying("employee") == Day.Carry.FOOD and stale.worker_carrying("employee_2") == Day.Carry.FOOD, "expired food remains independently held for disposal")
 	check(stale.discard_employee_food("employee") and stale.worker_carrying("employee_2") == Day.Carry.FOOD and stale.discard_employee_food("employee_2"), "disposing one worker's invalid food never clears another's")
 	var game = Restaurant.instantiate()
+	game.model = Day.new(0, 60)
 	root.add_child(game)
 	await process_frame
 	game.model.coins = 100

@@ -52,7 +52,8 @@ var store_labels: Dictionary = {}
 var purchase_quantities := {"rice": 1, "egg": 1, "noodles": 1, "tomato": 1}
 var recipe_target_portions := 3
 var selected_recipe := ""
-var store_grid: Control
+var store_grid: ScrollContainer
+var store_cards: GridContainer
 var store_detail: Control
 var menu_access_button: Button
 var staff_access_button: Button
@@ -615,22 +616,29 @@ func _build_store_panel() -> void:
 	_child_label(store_panel, "餐厅菜谱", Vector2(28, 16), Vector2(360, 43), 28, GOLD)
 	store_labels["overview"] = _child_label(store_panel, "", Vector2(28, 62), Vector2(650, 27), 15, CREAM)
 	_make_button(store_panel, "关闭", Rect2(657, 19, 80, 33), _toggle_store)
-	store_grid = Control.new()
-	store_grid.position = Vector2(0, 96)
-	store_grid.size = Vector2(764, 410)
+	store_grid = ScrollContainer.new()
+	store_grid.position = Vector2(24, 96)
+	store_grid.size = Vector2(716, 390)
+	store_grid.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	store_panel.add_child(store_grid)
+	store_cards = GridContainer.new()
+	store_cards.columns = 6
+	store_cards.custom_minimum_size.x = 700
+	store_cards.add_theme_constant_override("h_separation", 8)
+	store_cards.add_theme_constant_override("v_separation", 8)
+	store_grid.add_child(store_cards)
 	for i in range(Model.RECIPE_IDS.size()):
 		var recipe_id: String = Model.RECIPE_IDS[i]
-		var position := Vector2(28 + (i % 2) * 365, 4 + (i / 2) * 195)
-		var card := _make_button(store_grid, "", Rect2(position, Vector2(342, 181)), func(): _show_recipe(recipe_id))
+		var card := _make_button(store_cards, "", Rect2(Vector2.ZERO, Vector2(108, 174)), func(): _show_recipe(recipe_id))
+		card.custom_minimum_size = Vector2(108, 174)
 		var card_style := StyleBoxFlat.new()
 		card_style.bg_color = Color("493321")
 		card_style.border_color = Color("ab7649")
 		card_style.set_border_width_all(2)
 		card.add_theme_stylebox_override("normal", card_style)
-		card.add_child(_recipe_image(recipe_id, Vector2(12, 12), Vector2(150, 150)))
-		_child_label(card, Model.RECIPES[recipe_id].name, Vector2(169, 34), Vector2(160, 33), 19, CREAM)
-		store_labels["card_" + recipe_id] = _child_label(card, "", Vector2(169, 81), Vector2(160, 58), 15, GOLD)
+		card.add_child(_recipe_image(recipe_id, Vector2(13, 10), Vector2(82, 82)))
+		_child_label(card, Model.RECIPES[recipe_id].name, Vector2(6, 104), Vector2(98, 26), 14, CREAM)
+		store_labels["card_" + recipe_id] = _child_label(card, "", Vector2(6, 130), Vector2(98, 41), 12, GOLD)
 	store_detail = Control.new()
 	store_detail.position = Vector2(0, 96)
 	store_detail.size = Vector2(764, 410)
@@ -640,7 +648,7 @@ func _build_store_panel() -> void:
 	store_labels["detail_name"] = _child_label(store_detail, "", Vector2(28, 43), Vector2(300, 35), 25, GOLD)
 	store_labels["detail_intro"] = _child_label(store_detail, "", Vector2(28, 84), Vector2(315, 58), 16, CREAM)
 	store_labels["detail_available"] = _child_label(store_detail, "", Vector2(28, 132), Vector2(315, 28), 15, GOLD)
-	store_labels["detail_picture"] = _recipe_image("rice", Vector2(48, 150), Vector2(260, 244))
+	store_labels["detail_picture"] = _recipe_image("rice", Vector2(50, 159), Vector2(225, 225))
 	store_detail.add_child(store_labels["detail_picture"])
 	_child_label(store_detail, "每份用料 / 单项采购", Vector2(360, 40), Vector2(370, 33), 21, GOLD)
 	for i in range(Model.INGREDIENTS.size()):
@@ -905,19 +913,17 @@ func _adjust_purchase(ingredient: String, amount: int) -> void:
 	_refresh_store_panel()
 
 
-func _recipe_image(recipe_id: String, at: Vector2, dimensions: Vector2) -> TextureRect:
+func _recipe_image(recipe_id: String, at: Vector2, dimensions: Vector2) -> Sprite2D:
 	var index := Model.RECIPE_IDS.find(recipe_id)
 	var atlas := AtlasTexture.new()
 	atlas.atlas = DISH_SHEET
 	atlas.region = Rect2((index % 2) * 256, (index / 2) * 256, 256, 256)
-	var picture := TextureRect.new()
+	var picture := Sprite2D.new()
 	picture.texture = atlas
 	picture.position = at
-	picture.size = dimensions
-	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	picture.centered = false
+	picture.scale = Vector2.ONE * (minf(dimensions.x, dimensions.y) / 256.0)
 	picture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return picture
 
 

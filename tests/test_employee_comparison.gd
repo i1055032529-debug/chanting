@@ -17,6 +17,7 @@ func _run() -> void:
 
 func _simulate(with_employee: bool) -> Dictionary:
 	var game = Restaurant.instantiate()
+	game.model = Day.new(0, 60)
 	root.add_child(game)
 	await physics_frame
 	await process_frame

@@ -19,7 +19,7 @@ func fill(model, count: int) -> void:
 		check(model.seat_customer(model.next_order_id - 1), "reservation seats exactly once")
 
 func active_day():
-	var model = Day.new()
+	var model = Day.new(0, 60)
 	model.start_day()
 	return model
 
@@ -44,9 +44,9 @@ func _run() -> void:
 	check(not model.interact("table_1"), "wrong table rejects food")
 	check(model.interact("table_2"), "correct table served")
 	model.advance(Day.EAT_SECONDS)
-	check(model.coins == Day.STARTING_CASH + 30 and model.served == 1, "noodle base and quality bonus paid once")
+	check(model.coins == 60 + 30 and model.served == 1, "noodle base and quality bonus paid once")
 	model.advance(0.1)
-	check(model.coins == Day.STARTING_CASH + 30, "payment idempotent")
+	check(model.coins == 60 + 30, "payment idempotent")
 	check(model.customer_departed(2) and model.orders[2].state == "dirty", "paid departure becomes dirty")
 	check(model.interact("table_2") and model.interact("sink"), "plate recycling releases table")
 	check(model.tables[1] == 0, "table reusable")

@@ -16,7 +16,7 @@ func check(value: bool, message: String) -> void:
 		push_error("FAIL: " + message)
 
 func _run() -> void:
-	var model = Day.new()
+	var model = Day.new(0, 60)
 	check(Layout.valid(model.table_positions), "starting room keeps all tables and workstations reachable")
 	var fifth: Array[Vector2] = model.table_positions.duplicate()
 	fifth.append(Layout.free_table_position(fifth))
@@ -33,9 +33,9 @@ func _run() -> void:
 	check(not model.move_table(0, model.table_positions[1]) and model.table_positions[0] == Day.STARTING_TABLE_POSITIONS[0], "overlap cannot move existing furniture")
 	check(not model.move_table(0, Vector2(500, 520)), "furniture cannot cover the player's starting position")
 	check(not model.move_table(0, Vector2(1250, 500)), "placement outside the room is rejected")
-	check(not model.buy_table(model.table_positions[0]) and model.coins == Day.STARTING_CASH, "invalid purchase charges nothing")
+	check(not model.buy_table(model.table_positions[0]) and model.coins == 60, "invalid purchase charges nothing")
 	check(model.move_table(0, Vector2(530, 480)) and model.table_positions[0] == Vector2(530, 480), "valid placement updates the layout")
-	check(model.buy_table() and model.table_count() == 5 and model.tables.size() == 5 and model.coins == Day.STARTING_CASH - Day.TABLE_PRICE, "buying a table adds a fifth service slot")
+	check(model.buy_table() and model.table_count() == 5 and model.tables.size() == 5 and model.coins == 60 - Day.TABLE_PRICE, "buying a table adds a fifth service slot")
 	check(not model.buy_table() and model.summary().expenses.furniture == Day.TABLE_PRICE, "an unaffordable additional table is not billed")
 	check(not model.upgrade_equipment() and model.equipment_level == 0, "upgrade respects the available balance")
 	model.coins = 100
@@ -58,6 +58,7 @@ func _run() -> void:
 	model.new_game()
 	check(model.table_count() == 4 and model.equipment_level == 0 and model.table_positions == Day.STARTING_TABLE_POSITIONS and model.device_positions == Layout.DEFAULT_DEVICES, "new game resets furniture, equipment positions and upgrade")
 	var game = Restaurant.instantiate()
+	game.model = Day.new(0, 60)
 	root.add_child(game)
 	await process_frame
 	game._toggle_layout()
@@ -131,6 +132,7 @@ func _run() -> void:
 	game.queue_free()
 	await process_frame
 	var paged = Restaurant.instantiate()
+	paged.model = Day.new(0, 60)
 	root.add_child(paged)
 	await process_frame
 	paged.model.coins = 100
@@ -146,6 +148,7 @@ func _run() -> void:
 	paged.queue_free()
 	await process_frame
 	var wandering = Restaurant.instantiate()
+	wandering.model = Day.new(0, 60)
 	root.add_child(wandering)
 	await process_frame
 	wandering.model.hire_employee()

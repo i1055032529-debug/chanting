@@ -15,11 +15,11 @@ func check(value: bool, message: String) -> void:
 		push_error("FAIL: " + message)
 
 func _run() -> void:
-	var shop = Day.new()
-	check(shop.coins == Day.STARTING_CASH and shop.inventory.rice == 8 and shop.ingredient_available("rice") == 8, "new run has starter cash and pantry")
+	var shop = Day.new(0, 60)
+	check(shop.coins == 60 and shop.inventory.rice == 8 and shop.ingredient_available("rice") == 8, "new run has starter cash and pantry")
 	check(shop.portions_available("rice") == 8 and shop.portions_available("noodles") == 8, "recipe portions reflect required ingredients")
 	check(shop.purchase("rice", 3), "preopening purchase succeeds")
-	check(shop.inventory.rice == 11 and shop.coins == Day.STARTING_CASH - 6 and shop.summary().expenses.purchase == 6, "purchase adds stock and writes one cash expense")
+	check(shop.inventory.rice == 11 and shop.coins == 60 - 6 and shop.summary().expenses.purchase == 6, "purchase adds stock and writes one cash expense")
 	check(not shop.purchase("rice", 0) and not shop.purchase("unknown", 1) and not shop.purchase("tomato", 99), "invalid and unaffordable purchases do not change stock")
 	check(shop.ledger.size() == 1 and shop.inventory.tomato == 8, "failed purchases add no ledger entries")
 	check(shop.set_menu_enabled("noodles", false) and shop.set_menu_enabled("tomato_egg", false) and shop.set_menu_enabled("egg_noodles", false) and not shop.set_menu_enabled("rice", false), "menu can stop three dishes but cannot close all dishes")
@@ -30,7 +30,7 @@ func _run() -> void:
 	shop.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(shop.reserved_inventory.rice == 0 and shop.inventory.rice == 11, "closing day releases ingredients reserved for unstarted arrivals")
 	check(shop.next_day() and shop.inventory.rice == 11 and not shop.menu_enabled.noodles and shop.ledger.is_empty(), "purchased stock and menu survive the next day")
-	var scarce = Day.new()
+	var scarce = Day.new(0, 60)
 	scarce.inventory = {"rice": 2, "egg": 2, "noodles": 0, "tomato": 0}
 	scarce.set_menu_enabled("noodles", false)
 	scarce.set_menu_enabled("tomato_egg", false)
@@ -55,7 +55,7 @@ func _run() -> void:
 	check(not scarce.task_available("cook", 2) and scarce.task_available("cook", replacement), "unstocked retry is blocked while other reserved order remains valid")
 	check(scarce.cancel_order(replacement) and scarce.reserved_inventory.rice == 0, "waiting-order cancellation releases its reserved ingredients")
 	check(scarce.cancel_order(2) and scarce.inventory.rice == 1 and scarce.ingredient_consumed_cost == 5, "post-start cancellation keeps consumed stock spent")
-	var retry = Day.new()
+	var retry = Day.new(0, 60)
 	retry.start_day()
 	retry.request_customer()
 	retry.seat_customer(1)
@@ -68,7 +68,7 @@ func _run() -> void:
 	retry.orders[1].waited = Day.PATIENCE - 0.1
 	retry.advance(0.2)
 	check(retry.inventory.rice == after_first_start - 1 and retry.reserved_inventory.rice == 0, "ready-food timeout does not return cooked ingredients")
-	var timeout = Day.new()
+	var timeout = Day.new(0, 60)
 	timeout.inventory = {"rice": 1, "egg": 1, "noodles": 0, "tomato": 0}
 	timeout.start_day()
 	timeout.request_customer()
@@ -76,16 +76,16 @@ func _run() -> void:
 	timeout.orders[1].waited = Day.PATIENCE - 0.1
 	timeout.advance(0.2)
 	check(timeout.reserved_inventory.rice == 0 and timeout.inventory.rice == 1, "waiting timeout releases ingredients")
-	var partial = Day.new()
+	var partial = Day.new(0, 60)
 	partial.inventory = {"rice": 1, "egg": 0, "noodles": 0, "tomato": 0}
-	partial.spend("equipment", Day.STARTING_CASH - 3, "leave-three")
+	partial.spend("equipment", 60 - 3, "leave-three")
 	check(not partial.emergency_available(), "emergency is unavailable when affordable missing egg completes a dish")
 	partial.spend("equipment", 1, "leave-two")
 	check(partial.emergency_available(), "emergency becomes available below cheapest missing-ingredient cost")
-	var emergency = Day.new()
+	var emergency = Day.new(0, 60)
 	for ingredient: String in Day.INGREDIENTS: emergency.inventory[ingredient] = 0
 	check(not emergency.start_day(), "cannot open without any offerable dish")
-	check(emergency.spend("equipment", Day.STARTING_CASH, "drain-cash") and emergency.emergency_available(), "broke and empty pantry qualifies for emergency supply")
+	check(emergency.spend("equipment", 60, "drain-cash") and emergency.emergency_available(), "broke and empty pantry qualifies for emergency supply")
 	check(emergency.claim_emergency_supply() and not emergency.claim_emergency_supply(), "one emergency portion can be claimed per day")
 	check(emergency.inventory.rice == 1 and emergency.inventory.egg == 1 and emergency.start_day(), "emergency supply restores one sellable basic dish")
 	check(emergency.request_customer() and emergency.request_customer() and emergency.orders.size() == 1 and emergency.browsers.size() == 1, "emergency stock cannot be overbooked; next customer browses")
@@ -97,6 +97,7 @@ func _run() -> void:
 	emergency.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(emergency.next_day() and emergency.emergency_available(), "a broke new day can request one fresh emergency portion")
 	var game = Restaurant.instantiate()
+	game.model = Day.new(0, 60)
 	root.add_child(game)
 	await process_frame
 	game._toggle_store()
