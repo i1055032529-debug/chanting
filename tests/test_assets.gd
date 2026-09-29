@@ -40,7 +40,7 @@ func _run() -> void:
 			check(image.get_pixel(0, 0).a < 0.01, "sprite corner is transparent: " + relative)
 	for index in range(1, 6):
 		var floor := load("res://assets/backgrounds/tiles/floor_tile_%d.png" % index) as Texture2D
-		check(floor != null and Vector2i(floor.get_size()) == Vector2i(32, 32), "new floor tile is exactly 32x32: %d" % index)
+		check(floor != null and Vector2i(floor.get_size()) == Vector2i(64, 64), "floor picture is exactly 64x64: %d" % index)
 	var low_resolution_assets := {
 		"backgrounds/tiles/wall_32.png": Vector2i(32, 65),
 		"backgrounds/tiles/border_32.png": Vector2i(32, 8),

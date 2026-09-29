@@ -6,7 +6,7 @@ Godot 像素风餐厅经营游戏。已实现可继续购置和自由摆放餐�
 
 ## 运行
 
-使用 Godot 4.7.1 打开 `project.godot`，按 F5 运行。项目使用 Compatibility 渲染器，无第三方插件。中文界面优先使用系统字体（macOS 苹方、Windows 微软雅黑、Linux Noto Sans CJK）。餐厅地板与扩建统一采用 32×32 游戏像素的网格；贴图使用低分辨率素材和最近邻显示。
+使用 Godot 4.7.1 打开 `project.godot`，按 F5 运行。项目使用 Compatibility 渲染器，无第三方插件。中文界面优先使用系统字体（macOS 苹方、Windows 微软雅黑、Linux Noto Sans CJK）。扩建采用 32×32 游戏像素的网格，64×64 地砖覆盖 2×2 格；贴图使用最近邻显示。
 
 ## 操作
 

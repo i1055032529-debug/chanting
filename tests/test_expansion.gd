@@ -65,10 +65,21 @@ func _run() -> void:
 	await process_frame
 	game.model.coins = 300
 	game._toggle_expansion()
-	check(game.expansion_panel.visible and game.get_node("Background").preview_enabled, "expansion mode highlights candidates directly in the restaurant")
+	var background = game.get_node("Background")
+	check(game.expansion_panel.visible and background.preview_enabled and background.FLOOR_TILE_SIZE == Layout.TILE_SIZE * 2, "64-pixel pictures span four 32-pixel expansion cells")
+	check(background.floor_variant_by_tile.size() == 4, "each alternate floor picture occurs only once")
 	check(game._click_expansion(center_of(right_cells[0])) and game.model.expansion_cells.has(right_cells[0]) and game.expansion_panel.visible, "clicking a highlighted world cell immediately fills it")
+	var first_corner := Layout.ROOM_ORIGIN + Vector2(right_cells[0]) * Layout.TILE_SIZE
+	var cropped_floor := false
+	for child in background.get_children():
+		if child is Sprite2D and child.position == first_corner and child.region_enabled and child.region_rect.size == Vector2(32, 32): cropped_floor = true
+	check(cropped_floor, "buying one cell reveals only one quarter of its 64-pixel floor picture")
 	check(not game._click_expansion(center_of(right_cells[0])) and game.model.summary().expenses.expansion == Day.EXPANSION_PRICE, "clicking the same cell again does not charge")
 	for i in range(1, right_cells.size()): check(game._click_expansion(center_of(right_cells[i])), "world click fills another connected cell")
+	var complete_floor := false
+	for child in background.get_children():
+		if child is Sprite2D and child.position == first_corner and not child.region_enabled and child.texture.get_size() == Vector2(64, 64): complete_floor = true
+	check(complete_floor, "four purchased cells restore one complete 64-pixel floor picture")
 	game._move_camera_focus(Vector2(160, 120))
 	check(game.camera_focus.x > 640.0 and game.camera_focus.y > 400.0, "expansion mode can pan right and down")
 	check(game.model.buy_table(Vector2(1340, 500)), "world has room for a table after clicked purchases")

@@ -32,7 +32,7 @@ func writeAsset(_ source: String, _ output: String, _ width: Int, _ height: Int,
 }
 
 for i in 1...5 {
-    try writeAsset("backgrounds/tiles/floor_grain_\(i).png", "backgrounds/tiles/floor_tile_\(i).png", 32, 32)
+    try writeAsset("backgrounds/tiles/floor_grain_\(i).png", "backgrounds/tiles/floor_tile_\(i).png", 64, 64)
 }
 try writeAsset("backgrounds/tiles/wall.png", "backgrounds/tiles/wall_32.png", 32, 65)
 try writeAsset("backgrounds/tiles/border.png", "backgrounds/tiles/border_32.png", 32, 8)

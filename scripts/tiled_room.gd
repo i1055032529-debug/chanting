@@ -2,7 +2,7 @@ extends Node2D
 ## Draws the restaurant from small bitmap tiles; purchased cells add floor and remove blockers.
 
 const Layout = preload("res://scripts/layout_rules.gd")
-const FLOOR_TILE_SIZE := Layout.TILE_SIZE
+const FLOOR_TILE_SIZE := Layout.TILE_SIZE * 2
 const FLOOR_VARIANTS: Array[Texture2D] = [
 	preload("res://assets/backgrounds/tiles/floor_tile_1.png"),
 	preload("res://assets/backgrounds/tiles/floor_tile_2.png"),
@@ -87,12 +87,33 @@ func _rebuild() -> void:
 
 
 func _draw_owned_floor(owned: Array[Vector2i], origin: Vector2) -> void:
+	var cells_by_tile: Dictionary = {}
 	for cell in owned:
-		_sprite(_floor_texture(cell), origin + Vector2(cell * FLOOR_TILE_SIZE))
+		var tile_cell := _tile_cell(cell)
+		if not cells_by_tile.has(tile_cell): cells_by_tile[tile_cell] = []
+		cells_by_tile[tile_cell].append(cell)
+	for tile_cell: Vector2i in cells_by_tile:
+		var cells: Array = cells_by_tile[tile_cell]
+		if cells.size() == 4:
+			_sprite(_floor_texture(tile_cell), origin + Vector2(tile_cell * FLOOR_TILE_SIZE))
+		else:
+			for cell: Vector2i in cells: _floor_fragment(cell, origin)
 
 
 func _draw_floor_cell(cell: Vector2i, origin: Vector2, tint: Color) -> void:
-	_sprite(_floor_texture(cell), origin + Vector2(cell * FLOOR_TILE_SIZE)).modulate = tint
+	_floor_fragment(cell, origin).modulate = tint
+
+
+func _tile_cell(cell: Vector2i) -> Vector2i:
+	return Vector2i(floori(float(cell.x) / 2.0), floori(float(cell.y) / 2.0))
+
+
+func _floor_fragment(cell: Vector2i, origin: Vector2) -> Sprite2D:
+	var tile_cell := _tile_cell(cell)
+	var sprite := _sprite(_floor_texture(tile_cell), origin + Vector2(cell * Layout.TILE_SIZE))
+	sprite.region_enabled = true
+	sprite.region_rect = Rect2(Vector2((cell - tile_cell * 2) * Layout.TILE_SIZE), Vector2(Layout.TILE_SIZE, Layout.TILE_SIZE))
+	return sprite
 
 
 func _floor_texture(tile_cell: Vector2i) -> Texture2D:
