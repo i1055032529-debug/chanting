@@ -41,7 +41,7 @@ try writeAsset("backgrounds/restaurant.webp", "backgrounds/restaurant_wall_32.pn
 for name in ["stove", "sink", "serving_counter"] {
     try writeAsset("furniture/\(name).png", "furniture/\(name)_32.png", 64, 48)
 }
-try writeAsset("furniture/table.png", "furniture/table_32.png", 48, 32)
+// table_32.png is a hand-selected 64x32 sprite; do not overwrite it here.
 try writeAsset("furniture/chair.png", "furniture/chair_32.png", 28, 35)
 try writeAsset("furniture/cash_register_counter.png", "furniture/cash_register_counter_32.png", 64, 19)
 for name in ["chef", "customer"] {

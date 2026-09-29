@@ -45,7 +45,7 @@ func _run() -> void:
 		"backgrounds/tiles/wall_32.png": Vector2i(32, 65),
 		"backgrounds/tiles/border_32.png": Vector2i(32, 8),
 		"backgrounds/restaurant_wall_32.png": Vector2i(608, 65),
-		"furniture/table_32.png": Vector2i(48, 32),
+		"furniture/table_32.png": Vector2i(64, 32),
 		"furniture/chair_32.png": Vector2i(28, 35),
 		"furniture/stove_32.png": Vector2i(64, 48),
 		"furniture/sink_32.png": Vector2i(64, 48),

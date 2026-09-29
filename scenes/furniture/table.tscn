@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" path="res://assets/items/meal_32.png" id="3"]
 
 [sub_resource type="RectangleShape2D" id="Footprint"]
-size = Vector2(96, 24)
+size = Vector2(120, 24)
 
 [sub_resource type="SystemFont" id="Font"]
 font_names = PackedStringArray("PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC")
