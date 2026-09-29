@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" path="res://assets/items/meal.png" id="3"]
 
 [sub_resource type="RectangleShape2D" id="Footprint"]
-size = Vector2(80, 24)
+size = Vector2(96, 24)
 
 [sub_resource type="SystemFont" id="Font"]
 font_names = PackedStringArray("PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC")
@@ -26,8 +26,8 @@ station_id = "table"
 display_name = "01 号桌"
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
-position = Vector2(0, -41)
-scale = Vector2(1.2, 1.2)
+position = Vector2(0, -49)
+scale = Vector2(1.6, 1.6)
 texture = ExtResource("2")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
