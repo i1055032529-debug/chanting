@@ -19,6 +19,13 @@ var floor_variant_by_cell: Dictionary = {}
 
 
 func _ready() -> void:
+	var initial_cells: Array[Vector2i] = []
+	for row in range(Layout.ROOM_ROWS):
+		for column in range(Layout.INITIAL_COLUMNS):
+			initial_cells.append(Vector2i(column, row))
+	initial_cells.shuffle()
+	for variant_index in range(1, FLOOR_VARIANTS.size()):
+		floor_variant_by_cell[initial_cells[variant_index - 1]] = variant_index
 	_rebuild()
 
 
@@ -75,10 +82,7 @@ func _rebuild() -> void:
 
 
 func _floor_sprite(cell: Vector2i, position: Vector2) -> Sprite2D:
-	if not floor_variant_by_cell.has(cell):
-		var roll := randi_range(0, 9)
-		floor_variant_by_cell[cell] = 0 if roll < 6 else roll - 5
-	var tile_index: int = floor_variant_by_cell[cell]
+	var tile_index: int = floor_variant_by_cell.get(cell, 0)
 	return _sprite(FLOOR_VARIANTS[tile_index], position)
 
 
