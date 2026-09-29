@@ -2,14 +2,12 @@ extends Node2D
 ## Draws the restaurant from small bitmap tiles; purchased cells add floor and remove blockers.
 
 const Layout = preload("res://scripts/layout_rules.gd")
-const FLOOR = preload("res://assets/backgrounds/tiles/floor.png")
 const FLOOR_VARIANTS: Array[Texture2D] = [
-	FLOOR,
-	preload("res://assets/backgrounds/tiles/floor_variants/floor_02.png"),
-	preload("res://assets/backgrounds/tiles/floor_variants/floor_03.png"),
-	preload("res://assets/backgrounds/tiles/floor_variants/floor_04.png"),
-	preload("res://assets/backgrounds/tiles/floor_variants/floor_05.png"),
-	preload("res://assets/backgrounds/tiles/floor_variants/floor_06.png"),
+	preload("res://assets/backgrounds/tiles/floor_grain_1.png"),
+	preload("res://assets/backgrounds/tiles/floor_grain_2.png"),
+	preload("res://assets/backgrounds/tiles/floor_grain_3.png"),
+	preload("res://assets/backgrounds/tiles/floor_grain_4.png"),
+	preload("res://assets/backgrounds/tiles/floor_grain_5.png"),
 ]
 const WALL = preload("res://assets/backgrounds/tiles/wall.png")
 const BORDER = preload("res://assets/backgrounds/tiles/border.png")
@@ -78,7 +76,8 @@ func _rebuild() -> void:
 
 func _floor_sprite(cell: Vector2i, position: Vector2) -> Sprite2D:
 	if not floor_variant_by_cell.has(cell):
-		floor_variant_by_cell[cell] = randi_range(0, FLOOR_VARIANTS.size() - 1)
+		var roll := randi_range(0, 9)
+		floor_variant_by_cell[cell] = 0 if roll < 6 else roll - 5
 	var tile_index: int = floor_variant_by_cell[cell]
 	return _sprite(FLOOR_VARIANTS[tile_index], position)
 
