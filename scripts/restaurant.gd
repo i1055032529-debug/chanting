@@ -11,9 +11,9 @@ const CookingScreen = preload("res://scenes/cooking/cooking_screen.tscn")
 const StainScript = preload("res://scripts/stain.gd")
 const EmployeeScene = preload("res://scenes/actors/employee.tscn")
 const Layout = preload("res://scripts/layout_rules.gd")
-const DISH_SHEET = preload("res://assets/recipes/dishes.png")
-const STAFF_SHEET = preload("res://assets/characters/chef.png")
-const WOOD_BOARD = preload("res://assets/ui/wood_board.png")
+const DISH_SHEET = preload("res://assets/recipes/dishes_32.png")
+const STAFF_SHEET = preload("res://assets/characters/chef_32.png")
+const WOOD_BOARD = preload("res://assets/ui/wood_board_32.png")
 const INTERACT_DISTANCE := 55.0
 const DESK_DISTANCE := 95.0
 const MENU_DESK := Vector2(230, 328)
@@ -664,12 +664,12 @@ func _staff_list_contents(scroll: ScrollContainer) -> VBoxContainer:
 func _staff_avatar(profile_id: String, at: Vector2, size_scale: float) -> Sprite2D:
 	var atlas := AtlasTexture.new()
 	atlas.atlas = STAFF_SHEET
-	atlas.region = Rect2(0, 0, 64, 88)
+	atlas.region = Rect2(0, 0, 32, 44)
 	var portrait := Sprite2D.new()
 	portrait.texture = atlas
 	portrait.centered = false
 	portrait.position = at
-	portrait.scale = Vector2.ONE * size_scale
+	portrait.scale = Vector2.ONE * size_scale * 2.0
 	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	portrait.modulate = Model.STAFF_PROFILES[profile_id].color
 	return portrait
@@ -1126,12 +1126,12 @@ func _recipe_image(recipe_id: String, at: Vector2, dimensions: Vector2) -> Sprit
 	var index := Model.RECIPE_IDS.find(recipe_id)
 	var atlas := AtlasTexture.new()
 	atlas.atlas = DISH_SHEET
-	atlas.region = Rect2((index % 2) * 256, (index / 2) * 256, 256, 256)
+	atlas.region = Rect2((index % 2) * 64, (index / 2) * 64, 64, 64)
 	var picture := Sprite2D.new()
 	picture.texture = atlas
 	picture.position = at
 	picture.centered = false
-	picture.scale = Vector2.ONE * (minf(dimensions.x, dimensions.y) / 256.0)
+	picture.scale = Vector2.ONE * (minf(dimensions.x, dimensions.y) / 64.0)
 	picture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	return picture
 
@@ -1143,7 +1143,7 @@ func _show_recipe(recipe_id: String) -> void:
 	store_detail.show()
 	var atlas: AtlasTexture = store_labels.detail_picture.texture
 	var index := Model.RECIPE_IDS.find(recipe_id)
-	atlas.region = Rect2((index % 2) * 256, (index / 2) * 256, 256, 256)
+	atlas.region = Rect2((index % 2) * 64, (index / 2) * 64, 64, 64)
 	_refresh_store_panel()
 
 
@@ -1430,7 +1430,7 @@ func _refresh_employee_panel() -> void:
 	management_title.text = "员工详情 · %d/%d" % [planned.find(profile_id) + 1, planned.size()]
 	var profile: Dictionary = Model.STAFF_PROFILES[profile_id]
 	var portrait: AtlasTexture = staff_detail_avatar.texture
-	portrait.region = Rect2(0, 0, 64, 88)
+	portrait.region = Rect2(0, 0, 32, 44)
 	staff_detail_avatar.modulate = profile.color
 	staff_detail_name.text = profile.name
 	staff_detail_bio.text = profile.bio

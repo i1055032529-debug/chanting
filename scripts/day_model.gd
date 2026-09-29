@@ -58,7 +58,7 @@ const CookingRules = preload("res://scripts/cooking/cooking_model.gd")
 const Layout = preload("res://scripts/layout_rules.gd")
 const STARTING_TABLE_POSITIONS: Array[Vector2] = [Vector2(530, 460), Vector2(900, 460), Vector2(530, 575), Vector2(900, 575)]
 const TABLE_PRICE := 40
-const EXPANSION_PRICE := 20
+const EXPANSION_PRICE := 4
 const EQUIPMENT_PRICE := 70
 const EQUIPMENT_SPEED_BONUS := 1.25
 

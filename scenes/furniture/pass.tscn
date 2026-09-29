@@ -1,8 +1,8 @@
 [gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/station.gd" id="1"]
-[ext_resource type="Texture2D" path="res://assets/furniture/serving_counter.png" id="2"]
-[ext_resource type="Texture2D" path="res://assets/items/meal.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/furniture/serving_counter_32.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/items/meal_32.png" id="3"]
 
 [sub_resource type="RectangleShape2D" id="Footprint"]
 size = Vector2(104, 36)
@@ -27,6 +27,7 @@ display_name = "出餐台"
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
 position = Vector2(0, -48)
+scale = Vector2(2, 2)
 texture = ExtResource("2")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
@@ -67,11 +68,13 @@ position = Vector2(0, -55)
 [node name="Item" type="Sprite2D" parent="ItemMount"]
 visible = false
 position = Vector2(-20, 0)
+scale = Vector2(2, 2)
 texture = ExtResource("3")
 hframes = 2
 
 [node name="Item2" type="Sprite2D" parent="ItemMount"]
 visible = false
 position = Vector2(20, 0)
+scale = Vector2(2, 2)
 texture = ExtResource("3")
 hframes = 2

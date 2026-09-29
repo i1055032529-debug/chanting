@@ -1,8 +1,8 @@
 [gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/station.gd" id="1"]
-[ext_resource type="Texture2D" path="res://assets/furniture/table.png" id="2"]
-[ext_resource type="Texture2D" path="res://assets/items/meal.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/furniture/table_32.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/items/meal_32.png" id="3"]
 
 [sub_resource type="RectangleShape2D" id="Footprint"]
 size = Vector2(96, 24)
@@ -26,8 +26,8 @@ station_id = "table"
 display_name = "01 号桌"
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
-position = Vector2(0, -49)
-scale = Vector2(1.6, 1.6)
+position = Vector2(0, -46)
+scale = Vector2(2, 2)
 texture = ExtResource("2")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
@@ -67,6 +67,7 @@ position = Vector2(0, -50)
 
 [node name="Item" type="Sprite2D" parent="ItemMount"]
 visible = false
+scale = Vector2(2, 2)
 texture = ExtResource("3")
 hframes = 2
 

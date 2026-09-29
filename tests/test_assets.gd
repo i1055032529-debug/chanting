@@ -38,13 +38,37 @@ func _run() -> void:
 		else:
 			check(image.detect_alpha() != Image.ALPHA_NONE, "sprite retains alpha: " + relative)
 			check(image.get_pixel(0, 0).a < 0.01, "sprite corner is transparent: " + relative)
+	for index in range(1, 6):
+		var floor := load("res://assets/backgrounds/tiles/floor_tile_%d.png" % index) as Texture2D
+		check(floor != null and Vector2i(floor.get_size()) == Vector2i(32, 32), "new floor tile is exactly 32x32: %d" % index)
+	var low_resolution_assets := {
+		"backgrounds/tiles/wall_32.png": Vector2i(32, 65),
+		"backgrounds/tiles/border_32.png": Vector2i(32, 8),
+		"backgrounds/restaurant_wall_32.png": Vector2i(608, 65),
+		"furniture/table_32.png": Vector2i(48, 32),
+		"furniture/chair_32.png": Vector2i(28, 35),
+		"furniture/stove_32.png": Vector2i(64, 48),
+		"furniture/sink_32.png": Vector2i(64, 48),
+		"furniture/serving_counter_32.png": Vector2i(64, 48),
+		"furniture/cash_register_counter_32.png": Vector2i(64, 19),
+		"characters/chef_32.png": Vector2i(128, 176),
+		"characters/customer_32.png": Vector2i(128, 176),
+		"items/meal_32.png": Vector2i(40, 14),
+		"recipes/dishes_32.png": Vector2i(128, 128),
+		"ui/wood_board_32.png": Vector2i(112, 36),
+	}
+	for relative: String in low_resolution_assets:
+		var path: String = "res://assets/" + relative
+		var asset := load(path) as Texture2D
+		check(asset != null and Vector2i(asset.get_size()) == low_resolution_assets[relative], "32-pixel art size: " + relative)
+		check(FileAccess.get_file_as_bytes(path).size() < 400000, "32-pixel art below 400 KB: " + relative)
 	check(FileAccess.get_file_as_bytes("res://assets/furniture/cash_register_counter.png").size() < 30000, "cash counter sprite stays below 30 KB")
 	for relative in ["ui/wood_board.png"]:
 		var path: String = "res://assets/" + relative
 		check(FileAccess.file_exists(path) and FileAccess.get_file_as_bytes(path).size() < 400000, "pixel sign fits the image budget: " + relative)
 		check(load(path) is Texture2D, "Godot imports pixel sign: " + relative)
 	for character: String in ["chef", "customer"]:
-		var frames := load("res://assets/characters/%s_frames.tres" % character) as SpriteFrames
+		var frames := load("res://assets/characters/%s_frames_32.tres" % character) as SpriteFrames
 		for facing: String in ["down", "up", "left", "right"]:
 			for activity: String in ["idle", "walk", "carry", "work"]:
 				var animation := activity + "_" + facing

@@ -23,20 +23,26 @@ func center_of(cell: Vector2i) -> Vector2:
 
 func _run() -> void:
 	var model = Day.new(0, 60)
-	model.coins = 1000
-	check(model.can_expand(Vector2i(15, 2)) and model.can_expand(Vector2i(10, 8)) and not model.can_expand(Vector2i(10, 5)), "the starting floor includes three additional rows and expands beyond them")
-	check(not model.can_expand(Vector2i(-1, 2)) and not model.can_expand(Vector2i(2, -1)) and not model.can_expand(Vector2i(30, 2)), "left and top boundaries hold and distant ground is unavailable")
-	check(Layout.frontier(model.expansion_cells).has(Vector2i(15, 2)) and Layout.frontier(model.expansion_cells).has(Vector2i(10, 8)), "the world highlights only one-step neighbors")
-	var right_cells: Array[Vector2i] = [Vector2i(15, 2), Vector2i(16, 2), Vector2i(17, 2), Vector2i(15, 3), Vector2i(16, 3), Vector2i(17, 3)]
+	model.coins = 3000
+	var first_right := Vector2i(Layout.INITIAL_COLUMNS, 2)
+	var first_down := Vector2i(10, Layout.ROOM_ROWS)
+	check(Layout.TILE_SIZE == 32 and Layout.ROOM_CELL == 32.0, "room uses one 32x32 tile per expansion cell")
+	check(model.can_expand(first_right) and model.can_expand(first_down) and not model.can_expand(Vector2i(10, 5)), "the starting floor keeps its area and expands by 32-pixel cells")
+	check(not model.can_expand(Vector2i(-1, 2)) and not model.can_expand(Vector2i(2, -1)) and not model.can_expand(Vector2i(50, 2)), "left and top boundaries hold and distant ground is unavailable")
+	check(Layout.frontier(model.expansion_cells).has(first_right) and Layout.frontier(model.expansion_cells).has(first_down), "the world highlights only one-step neighbors")
+	var right_cells: Array[Vector2i] = []
+	for row in range(4, 10):
+		for column in range(Layout.INITIAL_COLUMNS, 45): right_cells.append(Vector2i(column, row))
 	for cell in right_cells: check(model.buy_expansion(cell), "connected right cell %s can be purchased" % cell)
-	for column in range(18, 26): check(model.buy_expansion(Vector2i(column, 2)), "rightward expansion continues beyond the former reserved lot")
-	var down_cells: Array[Vector2i] = [Vector2i(10, 8), Vector2i(11, 8), Vector2i(12, 8), Vector2i(10, 9), Vector2i(11, 9), Vector2i(12, 9)]
+	var down_cells: Array[Vector2i] = []
+	for row in range(Layout.ROOM_ROWS, 24):
+		for column in range(24, 35): down_cells.append(Vector2i(column, row))
 	for cell in down_cells: check(model.buy_expansion(cell), "connected bottom cell %s can be purchased" % cell)
-	var bought_count := right_cells.size() + 8 + down_cells.size()
+	var bought_count := right_cells.size() + down_cells.size()
 	check(model.expansion_cells.size() == bought_count and model.summary().expenses.expansion == bought_count * Day.EXPANSION_PRICE, "every purchased cell is billed once")
 	var cash_before: int = model.coins
 	check(not model.buy_expansion(right_cells[0]) and model.coins == cash_before, "a filled cell cannot be purchased twice")
-	check(Layout.owned_bounds(model.expansion_cells).x > 1640.0 and Layout.owned_bounds(model.expansion_cells).y > 800.0, "floor bounds grow to actual purchased cells")
+	check(Layout.owned_bounds(model.expansion_cells).x > 1440.0 and Layout.owned_bounds(model.expansion_cells).y > 1000.0, "floor bounds grow to actual purchased cells")
 	var right_tables: Array[Vector2] = model.table_positions.duplicate()
 	right_tables.append(Vector2(1340, 500))
 	check(Layout.valid(right_tables, model.device_positions, model.expansion_cells), "right expansion accepts a reachable table")
@@ -47,7 +53,7 @@ func _run() -> void:
 	down_tables.append(Vector2(920, 975))
 	check(Layout.valid(down_tables, model.device_positions, model.expansion_cells), "bottom expansion accepts a reachable table")
 	check(not Layout.customer_route(down_tables, Vector2(1020, 1000), model.device_positions, model.expansion_cells).is_empty(), "customer route extends downward")
-	check(model.start_day() and not model.can_expand(Vector2i(26, 2)), "expansion is unavailable during service")
+	check(model.start_day() and not model.can_expand(Vector2i(45, 4)), "expansion is unavailable during service")
 	model.advance(Day.DAY_SECONDS + Day.CLOSING_GRACE)
 	check(model.next_day() and model.expansion_cells.size() == bought_count, "purchased floor survives the next day")
 	model.new_game()
@@ -57,7 +63,7 @@ func _run() -> void:
 	game.model = Day.new(0, 60)
 	root.add_child(game)
 	await process_frame
-	game.model.coins = 200
+	game.model.coins = 300
 	game._toggle_expansion()
 	check(game.expansion_panel.visible and game.get_node("Background").preview_enabled, "expansion mode highlights candidates directly in the restaurant")
 	check(game._click_expansion(center_of(right_cells[0])) and game.model.expansion_cells.has(right_cells[0]) and game.expansion_panel.visible, "clicking a highlighted world cell immediately fills it")

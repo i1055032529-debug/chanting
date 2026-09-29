@@ -35,8 +35,8 @@ func _run() -> void:
 	check(game.store_grid is ScrollContainer and game.store_cards.columns == 6, "recipe list scrolls vertically with six cards per row")
 	var first_card: Button = game.store_cards.get_child(0)
 	var card_picture: Sprite2D = first_card.get_child(0)
-	check(card_picture.scale.x * 256.0 <= 82.1 and card_picture.position.x + card_picture.scale.x * 256.0 < first_card.size.x, "dish picture remains inside its card")
-	check(FileAccess.get_file_as_bytes("res://assets/recipes/dishes.png").size() < 400 * 1024, "four-dish sprite sheet stays below the image budget")
+	check(card_picture.scale.x * 64.0 <= 82.1 and card_picture.position.x + card_picture.scale.x * 64.0 < first_card.size.x, "dish picture remains inside its card")
+	check(FileAccess.get_file_as_bytes("res://assets/recipes/dishes_32.png").size() < 400 * 1024, "four-dish sprite sheet stays below the image budget")
 	game.model.inventory.rice = 0
 	game.model.inventory.egg = 0
 	game._show_recipe("rice")

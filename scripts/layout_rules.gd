@@ -5,9 +5,10 @@ extends RefCounted
 const TABLE_ROOM := Rect2(305, 420, 825, 450)
 const DEVICE_ROOM := Rect2(305, 365, 825, 505)
 const ROOM_ORIGIN := Vector2(40, 285)
-const ROOM_CELL := 80.0
-const INITIAL_COLUMNS := 15
-const ROOM_ROWS := 8
+const TILE_SIZE := 32
+const ROOM_CELL := float(TILE_SIZE)
+const INITIAL_COLUMNS := 38
+const ROOM_ROWS := 20
 const GRID_ORIGIN := Vector2(320, 300)
 const CELL := 10.0
 const DOOR_CLEAR := Rect2(335, 300, 110, 105)

@@ -97,7 +97,7 @@ func _run() -> void:
 	Input.action_press("move_left")
 	for i in range(30): await physics_frame
 	Input.action_release("move_left")
-	check(game.player.position.x >= 59.0, "wall blocks player")
+	check(game.player.position.x >= 54.0, "wall blocks player")
 	var pause_event := InputEventKey.new()
 	pause_event.keycode = KEY_ESCAPE
 	pause_event.physical_keycode = KEY_ESCAPE
