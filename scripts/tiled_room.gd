@@ -3,12 +3,21 @@ extends Node2D
 
 const Layout = preload("res://scripts/layout_rules.gd")
 const FLOOR = preload("res://assets/backgrounds/tiles/floor.png")
+const FLOOR_VARIANTS: Array[Texture2D] = [
+	FLOOR,
+	preload("res://assets/backgrounds/tiles/floor_variants/floor_02.png"),
+	preload("res://assets/backgrounds/tiles/floor_variants/floor_03.png"),
+	preload("res://assets/backgrounds/tiles/floor_variants/floor_04.png"),
+	preload("res://assets/backgrounds/tiles/floor_variants/floor_05.png"),
+	preload("res://assets/backgrounds/tiles/floor_variants/floor_06.png"),
+]
 const WALL = preload("res://assets/backgrounds/tiles/wall.png")
 const BORDER = preload("res://assets/backgrounds/tiles/border.png")
 const ORIGINAL = preload("res://assets/backgrounds/restaurant.webp")
 
 var expansion_cells: Array[Vector2i] = []
 var preview_enabled := false
+var floor_variant_by_cell: Dictionary = {}
 
 
 func _ready() -> void:
@@ -37,11 +46,11 @@ func _rebuild() -> void:
 	for row in range(Layout.ROOM_ROWS):
 		for column in range(Layout.INITIAL_COLUMNS): owned.append(Vector2i(column, row))
 	for cell in expansion_cells: owned.append(cell)
-	for cell in owned: _sprite(FLOOR, origin + Vector2(cell) * size)
+	for cell in owned: _floor_sprite(cell, origin + Vector2(cell) * size)
 	if preview_enabled:
 		for cell in Layout.frontier(expansion_cells):
 			var position := origin + Vector2(cell) * size
-			_sprite(FLOOR, position).modulate = Color(1.0, 0.92, 0.68, 0.46)
+			_floor_sprite(cell, position).modulate = Color(1.0, 0.92, 0.68, 0.46)
 			var outline := Line2D.new()
 			outline.points = PackedVector2Array([position, position + Vector2(size, 0), position + Vector2(size, size), position + Vector2(0, size), position])
 			outline.width = 3.0
@@ -65,6 +74,13 @@ func _rebuild() -> void:
 		if not Layout.owned_cell(cell + Vector2i.RIGHT, expansion_cells): _block(blockers, top_left + Vector2(size, size * 0.5), Vector2(8, size))
 		if not Layout.owned_cell(cell + Vector2i.UP, expansion_cells): _block(blockers, top_left + Vector2(size * 0.5, 0), Vector2(size, 8))
 		if not Layout.owned_cell(cell + Vector2i.DOWN, expansion_cells): _block(blockers, top_left + Vector2(size * 0.5, size), Vector2(size, 8))
+
+
+func _floor_sprite(cell: Vector2i, position: Vector2) -> Sprite2D:
+	if not floor_variant_by_cell.has(cell):
+		floor_variant_by_cell[cell] = randi_range(0, FLOOR_VARIANTS.size() - 1)
+	var tile_index: int = floor_variant_by_cell[cell]
+	return _sprite(FLOOR_VARIANTS[tile_index], position)
 
 
 func _sprite(texture: Texture2D, position: Vector2) -> Sprite2D:
