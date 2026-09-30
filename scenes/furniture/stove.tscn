@@ -1,7 +1,7 @@
 [gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/station.gd" id="1"]
-[ext_resource type="Texture2D" path="res://assets/furniture/stove_32.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/furniture/cooking_station_64x48.png" id="2"]
 [ext_resource type="Texture2D" path="res://assets/items/meal_32.png" id="3"]
 
 [sub_resource type="RectangleShape2D" id="Footprint"]
