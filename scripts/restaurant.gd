@@ -14,6 +14,8 @@ const Layout = preload("res://scripts/layout_rules.gd")
 const DISH_SHEET = preload("res://assets/recipes/dishes_32.png")
 const STAFF_SHEET = preload("res://assets/characters/chef_32.png")
 const WOOD_BOARD = preload("res://assets/ui/wood_board_32.png")
+const STATUS_BOARD = preload("res://assets/ui/notice_panel_128x64.png")
+const PixelStatusBoard = preload("res://scripts/ui/pixel_status_board.gd")
 const INTERACT_DISTANCE := 55.0
 const DESK_DISTANCE := 95.0
 const MENU_DESK := Vector2(230, 328)
@@ -36,6 +38,7 @@ var table_nodes: Array[Node2D] = []
 var chair_nodes: Array[Node2D] = []
 var order_card_panels: Array[Panel] = []
 var stain_nodes: Dictionary = {}
+var status_board
 var font: SystemFont
 var ui: Control
 var labels: Dictionary = {}
@@ -511,14 +514,17 @@ func _build_ui() -> void:
 	menu_access_button = _wall_record_button("查看菜谱", Rect2(130, 205, 92, 68), _request_store)
 	staff_access_button = _wall_record_button("查看雇佣信息", Rect2(232, 205, 68, 68), _request_management)
 	var coin_board := TextureRect.new()
-	coin_board.texture = WOOD_BOARD
-	coin_board.position = Vector2(1028, 18)
-	coin_board.size = Vector2(224, 72)
+	coin_board.texture = STATUS_BOARD
+	coin_board.position = Vector2(1008, 8)
+	coin_board.size = Vector2(256, 128)
+	coin_board.stretch_mode = TextureRect.STRETCH_SCALE
 	coin_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	coin_board.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	ui.add_child(coin_board)
-	labels.coins = _child_label(coin_board, "1000 金币", Vector2(14, 16), Vector2(196, 40), 25, GOLD)
-	labels.coins.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_board = PixelStatusBoard.new()
+	status_board.size = coin_board.size
+	status_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coin_board.add_child(status_board)
 	_child_label(ui, "桌位记录", Vector2(1037, 138), Vector2(190, 30), 19, GOLD)
 	order_list_scroll = ScrollContainer.new()
 	order_list_scroll.position = Vector2(1018, 174)
@@ -1266,7 +1272,7 @@ func _refresh_ui() -> void:
 	_refresh_expansion_panel()
 	if model.phase == "summary" and summary_panel != null and summary_panel.visible:
 		summary_text.text = _format_summary(model.summary())
-	labels.coins.text = "%d 金币" % model.coins
+	status_board.set_values(model.coins, ceili(Model.DAY_SECONDS - model.elapsed))
 	if preopen_text != null:
 		preopen_text.text = "第 %d 天 · 现金 %d · 工资预留 %d · 可用 %d\n今日雇员 %d 人，次日计划 %d 人。\n\n进入餐厅后，靠近左上角墙面点击菜谱或雇佣记录。" % [model.day_number, model.coins, model.wage_reserved, model.spendable_cash(), model.employee_hired_count, model.planned_employee_count()]
 	if model.phase == "preopen":
